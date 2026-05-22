@@ -5,14 +5,17 @@ import akka.javasdk.annotations.http.HttpEndpoint;
 import akka.javasdk.annotations.http.Get;
 import akka.javasdk.annotations.http.Post;
 import akka.javasdk.client.ComponentClient;
+import com.example.payment.application.PaymentHistoryView;
 import com.example.payment.application.PaymentProcessingWorkflow;
 import com.example.payment.application.PaymentTransactionEntity;
+import com.example.payment.application.ReceiptGenerator;
 import com.example.payment.domain.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Payment REST API Endpoint.
@@ -24,9 +27,11 @@ import java.util.UUID;
 public class PaymentEndpoint {
 
     private final ComponentClient componentClient;
+    private final ReceiptGenerator receiptGenerator;
 
     public PaymentEndpoint(ComponentClient componentClient) {
         this.componentClient = componentClient;
+        this.receiptGenerator = new ReceiptGenerator();
     }
 
     // Request/Response records
@@ -136,6 +141,77 @@ public class PaymentEndpoint {
         return toPaymentResponse(transaction);
     }
 
+    @Get("/history/{customerId}")
+    public PaymentHistoryResponse getPaymentHistory(String customerId) {
+        // Query payment history view
+        var entries = componentClient
+            .forView()
+            .method(PaymentHistoryView::getByCustomerId)
+            .invoke(customerId);
+
+        var transactions = entries.transactions().stream()
+            .map(this::toHistoryEntryResponse)
+            .collect(Collectors.toList());
+
+        return new PaymentHistoryResponse(transactions, transactions.size());
+    }
+
+    @Get("/history/{customerId}/status/{status}")
+    public PaymentHistoryResponse getPaymentHistoryByStatus(String customerId, String status) {
+        // Query filtered history
+        var filter = new PaymentHistoryView.StatusFilter(customerId, status);
+        var entries = componentClient
+            .forView()
+            .method(PaymentHistoryView::getByCustomerIdAndStatus)
+            .invoke(filter);
+
+        var transactions = entries.transactions().stream()
+            .map(this::toHistoryEntryResponse)
+            .collect(Collectors.toList());
+
+        return new PaymentHistoryResponse(transactions, transactions.size());
+    }
+
+    @Get("/transactions/{transactionId}/receipt")
+    public String getReceipt(String transactionId) {
+        // Get transaction details
+        PaymentTransaction transaction = componentClient
+            .forEventSourcedEntity(transactionId)
+            .method(PaymentTransactionEntity::getPayment)
+            .invoke();
+
+        // Generate HTML receipt
+        return receiptGenerator.generateReceiptHtml(transaction);
+    }
+
+    @Get("/transactions/{transactionId}/receipt/text")
+    public String getReceiptText(String transactionId) {
+        // Get transaction details
+        PaymentTransaction transaction = componentClient
+            .forEventSourcedEntity(transactionId)
+            .method(PaymentTransactionEntity::getPayment)
+            .invoke();
+
+        // Generate text receipt
+        return receiptGenerator.generateReceiptText(transaction);
+    }
+
+    // Response records for history
+    public record PaymentHistoryResponse(
+        List<HistoryEntryResponse> transactions,
+        int total
+    ) {}
+
+    public record HistoryEntryResponse(
+        String transactionId,
+        String status,
+        MoneyResponse amount,
+        String merchantReference,
+        String createdAt,
+        String completedAt,
+        boolean hasRefunds
+    ) {}
+
     // Helper methods
     private PaymentResponse toPaymentResponse(PaymentTransaction transaction) {
         return new PaymentResponse(
@@ -154,6 +230,19 @@ public class PaymentEndpoint {
             money.amount().toPlainString(),
             money.currency().name(),
             money.format()
+        );
+    }
+
+    private HistoryEntryResponse toHistoryEntryResponse(PaymentHistoryView.PaymentHistoryEntry entry) {
+        var money = new Money(entry.amount(), Currency.valueOf(entry.currency()));
+        return new HistoryEntryResponse(
+            entry.transactionId(),
+            entry.status().name(),
+            toMoneyResponse(money),
+            entry.merchantReference(),
+            entry.createdAt().toString(),
+            entry.completedAt() != null ? entry.completedAt().toString() : null,
+            entry.hasRefunds()
         );
     }
 }

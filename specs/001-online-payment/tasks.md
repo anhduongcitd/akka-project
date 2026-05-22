@@ -143,21 +143,21 @@ Single project structure at repository root:
 
 ### View & Receipt Generation
 
-- [ ] T047 [US3] Create PaymentHistoryView with query methods in src/main/java/com/example/payment/application/PaymentHistoryView.java
-- [ ] T048 [US3] Define PaymentHistoryEntry record for view in PaymentHistoryView
-- [ ] T049 [US3] Create ReceiptGenerator service for PDF generation in src/main/java/com/example/payment/application/ReceiptGenerator.java
+- [X] T047 [US3] Create PaymentHistoryView with query methods in src/main/java/com/example/payment/application/PaymentHistoryView.java
+- [X] T048 [US3] Define PaymentHistoryEntry record for view in PaymentHistoryView
+- [X] T049 [US3] Create ReceiptGenerator service for PDF generation in src/main/java/com/example/payment/application/ReceiptGenerator.java
 
 ### API Layer
 
-- [ ] T050 [US3] Add GET /payment/history endpoint to PaymentEndpoint with query params
-- [ ] T051 [US3] Add GET /payment/transactions/{id}/receipt endpoint to PaymentEndpoint
-- [ ] T052 [US3] Define query response records in PaymentEndpoint
+- [X] T050 [US3] Add GET /payment/history endpoint to PaymentEndpoint with query params
+- [X] T051 [US3] Add GET /payment/transactions/{id}/receipt endpoint to PaymentEndpoint
+- [X] T052 [US3] Define query response records in PaymentEndpoint
 
 ### Tests
 
-- [ ] T053 [US3] Integration test PaymentHistoryView queries in src/test/java/com/example/payment/application/PaymentHistoryViewIntegrationTest.java
-- [ ] T054 [US3] Integration test payment history endpoint with filters in src/test/java/com/example/payment/api/PaymentHistoryIntegrationTest.java
-- [ ] T055 [US3] Integration test receipt download in src/test/java/com/example/payment/api/ReceiptDownloadIntegrationTest.java
+- [X] T053 [US3] Integration test PaymentHistoryView queries in src/test/java/com/example/payment/application/PaymentHistoryViewIntegrationTest.java
+- [X] T054 [US3] Integration test payment history endpoint with filters in src/test/java/com/example/payment/api/PaymentHistoryIntegrationTest.java
+- [X] T055 [US3] Integration test receipt download in src/test/java/com/example/payment/api/ReceiptDownloadIntegrationTest.java
 
 **Checkpoint**: All three user stories work independently - full payment, saved methods, and history
 
