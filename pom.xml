@@ -6,12 +6,24 @@
         <artifactId>akka-javasdk-parent</artifactId>
         <version>3.5.19</version>
     </parent>
-    <groupId>com.example</groupId>
-    <artifactId>faceb</artifactId>
+    <groupId>com.example.payment</groupId>
+    <artifactId>online-payment-service</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-    <name>faceb</name>
+    <name>online-payment-service</name>
     <dependencies>
-        <!-- Your dependencies go here -->
+        <!-- Stripe payment gateway SDK -->
+        <dependency>
+            <groupId>com.stripe</groupId>
+            <artifactId>stripe-java</artifactId>
+            <version>24.0.0</version>
+        </dependency>
+
+        <!-- AWS SDK for SES (email notifications) -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-ses</artifactId>
+            <version>1.12.600</version>
+        </dependency>
     </dependencies>
 </project>

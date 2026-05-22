@@ -26,12 +26,12 @@ Single project structure at repository root:
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Update package structure from com.example to com.example.payment in pom.xml
-- [ ] T002 Add Stripe Java SDK dependency (version 24.0.0) to pom.xml
-- [ ] T003 [P] Add AWS SES SDK dependency (version 1.12.600) to pom.xml
-- [ ] T004 [P] Configure environment variables in src/main/resources/application.conf (STRIPE_API_KEY, AWS credentials, exchange rate API URL)
-- [ ] T005 [P] Create .env.example file documenting required environment variables
-- [ ] T006 [P] Update README.md with setup instructions from quickstart.md
+- [X] T001 Update package structure from com.example to com.example.payment in pom.xml
+- [X] T002 Add Stripe Java SDK dependency (version 24.0.0) to pom.xml
+- [X] T003 [P] Add AWS SES SDK dependency (version 1.12.600) to pom.xml
+- [X] T004 [P] Configure environment variables in src/main/resources/application.conf (STRIPE_API_KEY, AWS credentials, exchange rate API URL)
+- [X] T005 [P] Create .env.example file documenting required environment variables
+- [X] T006 [P] Update README.md with setup instructions from quickstart.md
 
 ---
 
@@ -43,28 +43,28 @@ Single project structure at repository root:
 
 ### Domain Layer (No Akka Dependencies)
 
-- [ ] T007 [P] Create Currency enum in src/main/java/com/example/payment/domain/Currency.java
-- [ ] T008 [P] Create PaymentStatus enum in src/main/java/com/example/payment/domain/PaymentStatus.java
-- [ ] T009 [P] Create RefundStatus enum in src/main/java/com/example/payment/domain/RefundStatus.java
-- [ ] T010 [P] Create CardBrand enum in src/main/java/com/example/payment/domain/CardBrand.java
-- [ ] T011 Create Money value object with currency support in src/main/java/com/example/payment/domain/Money.java
-- [ ] T012 [P] Create Customer record in src/main/java/com/example/payment/domain/Customer.java
-- [ ] T013 [P] Create Refund record in src/main/java/com/example/payment/domain/Refund.java
-- [ ] T014 Create PaymentMethod record in src/main/java/com/example/payment/domain/PaymentMethod.java
-- [ ] T015 Create PaymentTransaction record with validation methods in src/main/java/com/example/payment/domain/PaymentTransaction.java
-- [ ] T016 Create PaymentTransactionEvent sealed interface with 6 event types in src/main/java/com/example/payment/domain/PaymentTransactionEvent.java
-- [ ] T017 Create PaymentMethodEvent sealed interface with 3 event types in src/main/java/com/example/payment/domain/PaymentMethodEvent.java
+- [X] T007 [P] Create Currency enum in src/main/java/com/example/payment/domain/Currency.java
+- [X] T008 [P] Create PaymentStatus enum in src/main/java/com/example/payment/domain/PaymentStatus.java
+- [X] T009 [P] Create RefundStatus enum in src/main/java/com/example/payment/domain/RefundStatus.java
+- [X] T010 [P] Create CardBrand enum in src/main/java/com/example/payment/domain/CardBrand.java
+- [X] T011 Create Money value object with currency support in src/main/java/com/example/payment/domain/Money.java
+- [X] T012 [P] Create Customer record in src/main/java/com/example/payment/domain/Customer.java
+- [X] T013 [P] Create Refund record in src/main/java/com/example/payment/domain/Refund.java
+- [X] T014 Create PaymentMethod record in src/main/java/com/example/payment/domain/PaymentMethod.java
+- [X] T015 Create PaymentTransaction record with validation methods in src/main/java/com/example/payment/domain/PaymentTransaction.java
+- [X] T016 Create PaymentTransactionEvent sealed interface with 6 event types in src/main/java/com/example/payment/domain/PaymentTransactionEvent.java
+- [X] T017 Create PaymentMethodEvent sealed interface with 3 event types in src/main/java/com/example/payment/domain/PaymentMethodEvent.java
 
 ### Domain Tests
 
-- [ ] T018 [P] Unit test Money value object (add, subtract, convert) in src/test/java/com/example/payment/domain/MoneyTest.java
-- [ ] T019 [P] Unit test PaymentTransaction validation rules in src/test/java/com/example/payment/domain/PaymentTransactionTest.java
+- [X] T018 [P] Unit test Money value object (add, subtract, convert) in src/test/java/com/example/payment/domain/MoneyTest.java
+- [X] T019 [P] Unit test PaymentTransaction validation rules in src/test/java/com/example/payment/domain/PaymentTransactionTest.java
 
 ### Infrastructure Services
 
-- [ ] T020 Create ExchangeRateService with caching in src/main/java/com/example/payment/application/ExchangeRateService.java
-- [ ] T021 Create Stripe payment gateway client wrapper in src/main/java/com/example/payment/application/StripePaymentGateway.java
-- [ ] T022 [P] Create email service wrapper for AWS SES in src/main/java/com/example/payment/application/EmailService.java
+- [X] T020 Create ExchangeRateService with caching in src/main/java/com/example/payment/application/ExchangeRateService.java
+- [X] T021 Create Stripe payment gateway client wrapper in src/main/java/com/example/payment/application/StripePaymentGateway.java
+- [X] T022 [P] Create email service wrapper for AWS SES in src/main/java/com/example/payment/application/EmailService.java
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -78,22 +78,22 @@ Single project structure at repository root:
 
 ### Entity & Workflow
 
-- [ ] T023 [US1] Create PaymentTransactionEntity with command handlers in src/main/java/com/example/payment/application/PaymentTransactionEntity.java
-- [ ] T024 [US1] Implement PaymentProcessingWorkflow with Stripe integration in src/main/java/com/example/payment/application/PaymentProcessingWorkflow.java
-- [ ] T025 [US1] Create EmailNotificationConsumer listening to PaymentTransactionEntity events in src/main/java/com/example/payment/application/EmailNotificationConsumer.java
+- [X] T023 [US1] Create PaymentTransactionEntity with command handlers in src/main/java/com/example/payment/application/PaymentTransactionEntity.java
+- [X] T024 [US1] Implement PaymentProcessingWorkflow with Stripe integration in src/main/java/com/example/payment/application/PaymentProcessingWorkflow.java
+- [X] T025 [US1] Create EmailNotificationConsumer listening to PaymentTransactionEntity events in src/main/java/com/example/payment/application/EmailNotificationConsumer.java
 
 ### API Layer
 
-- [ ] T026 [US1] Create PaymentEndpoint with POST /payment/transactions in src/main/java/com/example/payment/api/PaymentEndpoint.java
-- [ ] T027 [US1] Add GET /payment/transactions/{id} endpoint to PaymentEndpoint
-- [ ] T028 [US1] Define request/response records in PaymentEndpoint
+- [X] T026 [US1] Create PaymentEndpoint with POST /payment/transactions in src/main/java/com/example/payment/api/PaymentEndpoint.java
+- [X] T027 [US1] Add GET /payment/transactions/{id} endpoint to PaymentEndpoint
+- [X] T028 [US1] Define request/response records in PaymentEndpoint
 
 ### Tests
 
-- [ ] T029 [US1] Unit test PaymentTransactionEntity command handlers in src/test/java/com/example/payment/application/PaymentTransactionEntityTest.java
-- [ ] T030 [US1] Unit test PaymentProcessingWorkflow with mock Stripe in src/test/java/com/example/payment/application/PaymentProcessingWorkflowTest.java
-- [ ] T031 [US1] Integration test PaymentEndpoint POST /payment/transactions in src/test/java/com/example/payment/api/PaymentEndpointIntegrationTest.java
-- [ ] T032 [US1] Integration test full payment flow (create → authorize → capture → email) in src/test/java/com/example/payment/api/PaymentFlowIntegrationTest.java
+- [X] T029 [US1] Unit test PaymentTransactionEntity command handlers in src/test/java/com/example/payment/application/PaymentTransactionEntityTest.java
+- [X] T030 [US1] Unit test PaymentProcessingWorkflow with mock Stripe in src/test/java/com/example/payment/application/PaymentProcessingWorkflowTest.java
+- [X] T031 [US1] Integration test PaymentEndpoint POST /payment/transactions in src/test/java/com/example/payment/api/PaymentEndpointIntegrationTest.java
+- [X] T032 [US1] Integration test full payment flow (create → authorize → capture → email) in src/test/java/com/example/payment/api/PaymentFlowIntegrationTest.java
 
 **Checkpoint**: User Story 1 complete - customers can make payments and receive confirmation
 

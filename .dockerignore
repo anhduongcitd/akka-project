@@ -1,0 +1,43 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Build artifacts
+target/
+*.jar
+*.class
+
+# Environment
+.env
+.env.*
+*.key
+*.pem
+
+# Documentation
+README.md
+LICENSE
+docs/
+specs/
+
+# Maven
+.mvn/
+pom.xml.tag
+pom.xml.releaseBackup
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.swp
