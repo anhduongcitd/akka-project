@@ -24,6 +24,7 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
         var request = new PaymentEndpoint.CreatePaymentRequest(
             moneyRequest,
             "tok_visa",
+            null, // paymentMethodId - not using saved method
             "ORDER-001",
             customerRequest,
             false

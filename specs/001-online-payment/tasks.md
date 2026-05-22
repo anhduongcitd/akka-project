@@ -107,29 +107,29 @@ Single project structure at repository root:
 
 ### Entity & View
 
-- [ ] T033 [US2] Create PaymentMethodEntity with command handlers in src/main/java/com/example/payment/application/PaymentMethodEntity.java
-- [ ] T034 [US2] Create CustomerPaymentMethodsView in src/main/java/com/example/payment/application/CustomerPaymentMethodsView.java
-- [ ] T035 [US2] Define PaymentMethodEntry record for view in CustomerPaymentMethodsView
+- [X] T033 [US2] Create PaymentMethodEntity with command handlers in src/main/java/com/example/payment/application/PaymentMethodEntity.java
+- [X] T034 [US2] Create CustomerPaymentMethodsView in src/main/java/com/example/payment/application/CustomerPaymentMethodsView.java
+- [X] T035 [US2] Define PaymentMethodEntry record for view in CustomerPaymentMethodsView
 
 ### API Layer
 
-- [ ] T036 [US2] Create PaymentMethodEndpoint with POST /payment/methods in src/main/java/com/example/payment/api/PaymentMethodEndpoint.java
-- [ ] T037 [US2] Add GET /payment/methods endpoint to PaymentMethodEndpoint
-- [ ] T038 [US2] Add DELETE /payment/methods/{id} endpoint to PaymentMethodEndpoint
-- [ ] T039 [US2] Add PUT /payment/methods/{id}/default endpoint to PaymentMethodEndpoint
-- [ ] T040 [US2] Define request/response records in PaymentMethodEndpoint
+- [X] T036 [US2] Create PaymentMethodEndpoint with POST /payment/methods in src/main/java/com/example/payment/api/PaymentMethodEndpoint.java
+- [X] T037 [US2] Add GET /payment/methods endpoint to PaymentMethodEndpoint
+- [X] T038 [US2] Add DELETE /payment/methods/{id} endpoint to PaymentMethodEndpoint
+- [X] T039 [US2] Add PUT /payment/methods/{id}/default endpoint to PaymentMethodEndpoint
+- [X] T040 [US2] Define request/response records in PaymentMethodEndpoint
 
 ### Integration with US1
 
-- [ ] T041 [US2] Update PaymentEndpoint to accept paymentMethodId in payment request
-- [ ] T042 [US2] Update PaymentProcessingWorkflow to handle saved payment methods
+- [X] T041 [US2] Update PaymentEndpoint to accept paymentMethodId in payment request
+- [X] T042 [US2] Update PaymentProcessingWorkflow to handle saved payment methods
 
 ### Tests
 
-- [ ] T043 [US2] Unit test PaymentMethodEntity command handlers in src/test/java/com/example/payment/application/PaymentMethodEntityTest.java
-- [ ] T044 [US2] Integration test CustomerPaymentMethodsView in src/test/java/com/example/payment/application/CustomerPaymentMethodsViewIntegrationTest.java
-- [ ] T045 [US2] Integration test PaymentMethodEndpoint CRUD operations in src/test/java/com/example/payment/api/PaymentMethodEndpointIntegrationTest.java
-- [ ] T046 [US2] Integration test payment with saved method in src/test/java/com/example/payment/api/SavedPaymentMethodFlowIntegrationTest.java
+- [X] T043 [US2] Unit test PaymentMethodEntity command handlers in src/test/java/com/example/payment/application/PaymentMethodEntityTest.java
+- [X] T044 [US2] Integration test CustomerPaymentMethodsView in src/test/java/com/example/payment/application/CustomerPaymentMethodsViewIntegrationTest.java
+- [X] T045 [US2] Integration test PaymentMethodEndpoint CRUD operations in src/test/java/com/example/payment/api/PaymentMethodEndpointIntegrationTest.java
+- [X] T046 [US2] Integration test payment with saved method in src/test/java/com/example/payment/api/SavedPaymentMethodFlowIntegrationTest.java
 
 **Checkpoint**: User Stories 1 AND 2 work independently - saved methods enable faster checkout
 

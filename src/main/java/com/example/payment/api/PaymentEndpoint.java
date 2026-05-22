@@ -33,6 +33,7 @@ public class PaymentEndpoint {
     public record CreatePaymentRequest(
         MoneyRequest amount,
         String cardToken,
+        String paymentMethodId,  // Optional: use saved payment method
         String merchantReference,
         CustomerRequest customer,
         boolean savePaymentMethod
@@ -73,13 +74,23 @@ public class PaymentEndpoint {
     @Post("/transactions")
     public PaymentResponse createPayment(CreatePaymentRequest request) {
         // Validate request
-        if (request.amount == null || request.cardToken == null) {
-            throw new IllegalArgumentException("Amount and card token are required");
+        if (request.amount == null) {
+            throw new IllegalArgumentException("Amount is required");
+        }
+
+        // Either cardToken OR paymentMethodId must be provided
+        if (request.cardToken == null && request.paymentMethodId == null) {
+            throw new IllegalArgumentException("Either card token or payment method ID is required");
         }
 
         if (request.customer == null) {
             throw new IllegalArgumentException("Customer information is required");
         }
+
+        // Determine which token to use
+        String token = request.cardToken != null
+            ? request.cardToken
+            : request.paymentMethodId; // Use saved payment method token
 
         // Generate transaction ID
         String transactionId = "txn_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
@@ -94,7 +105,7 @@ public class PaymentEndpoint {
             customer,
             amount,
             request.merchantReference,
-            request.cardToken
+            token
         );
 
         componentClient
