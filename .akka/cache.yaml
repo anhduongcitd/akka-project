@@ -1,0 +1,7 @@
+command-version: 3.0.62
+contexts:
+- name: default
+  values: {}
+  project-cache: []
+  organization-cache: []
+check-expiration-date: 2026-05-23T15:28:58.6839398+07:00
