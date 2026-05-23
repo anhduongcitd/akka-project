@@ -190,6 +190,12 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
 
         // Convert request to domain objects
         Money amount = request.amount.toMoney();
+
+        // Validate amount is greater than zero
+        if (amount.amount().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Payment amount must be greater than zero");
+        }
+
         Customer customer = request.customer.toCustomer();
 
         // Determine payment source
@@ -242,7 +248,22 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             throw new IllegalArgumentException("Refund amount is required");
         }
 
+        // Verify transaction exists
+        PaymentTransaction transaction = componentClient
+            .forEventSourcedEntity(transactionId)
+            .method(PaymentTransactionEntity::getPayment)
+            .invoke();
+
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction not found: " + transactionId);
+        }
+
         Money refundAmount = request.amount.toMoney();
+
+        // Validate refund amount is greater than zero
+        if (refundAmount.amount().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Refund amount must be greater than zero");
+        }
 
         // Generate refund workflow ID
         String refundWorkflowId = "refund_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
