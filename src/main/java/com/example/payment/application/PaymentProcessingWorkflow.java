@@ -24,24 +24,26 @@ public class PaymentProcessingWorkflow extends Workflow<PaymentProcessingWorkflo
         Customer customer,
         Money amount,
         String merchantReference,
-        String cardToken,
+        String paymentSource,           // Card token or payment method ID
+        boolean isUsingSavedMethod,     // True if paymentSource is a saved payment method ID
+        boolean savePaymentMethod,      // True if should save as new payment method
         String gatewayTransactionId,
         WorkflowStatus status,
         String failureReason
     ) {
         public State withGatewayTransactionId(String id) {
             return new State(transactionId, customer, amount, merchantReference,
-                cardToken, id, status, failureReason);
+                paymentSource, isUsingSavedMethod, savePaymentMethod, id, status, failureReason);
         }
 
         public State withStatus(WorkflowStatus newStatus) {
             return new State(transactionId, customer, amount, merchantReference,
-                cardToken, gatewayTransactionId, newStatus, failureReason);
+                paymentSource, isUsingSavedMethod, savePaymentMethod, gatewayTransactionId, newStatus, failureReason);
         }
 
         public State withFailureReason(String reason) {
             return new State(transactionId, customer, amount, merchantReference,
-                cardToken, gatewayTransactionId, status, reason);
+                paymentSource, isUsingSavedMethod, savePaymentMethod, gatewayTransactionId, status, reason);
         }
     }
 
@@ -57,7 +59,9 @@ public class PaymentProcessingWorkflow extends Workflow<PaymentProcessingWorkflo
         Customer customer,
         Money amount,
         String merchantReference,
-        String cardToken
+        String paymentSource,           // Card token or payment method ID
+        boolean isUsingSavedMethod,     // True if paymentSource is a saved payment method ID
+        boolean savePaymentMethod       // True if should save as new payment method
     ) {}
 
     private final ComponentClient componentClient;
@@ -98,7 +102,9 @@ public class PaymentProcessingWorkflow extends Workflow<PaymentProcessingWorkflo
             command.customer,
             command.amount,
             command.merchantReference,
-            command.cardToken,
+            command.paymentSource,
+            command.isUsingSavedMethod,
+            command.savePaymentMethod,
             null,
             WorkflowStatus.INITIATED,
             null
@@ -137,9 +143,43 @@ public class PaymentProcessingWorkflow extends Workflow<PaymentProcessingWorkflo
 
     @StepName("authorize-payment")
     private StepEffect authorizePaymentStep() {
+        // Determine payment token based on source
+        String paymentToken;
+
+        if (currentState().isUsingSavedMethod) {
+            // Retrieve saved payment method to get the token
+            try {
+                var savedMethod = componentClient
+                    .forEventSourcedEntity(currentState().paymentSource)
+                    .method(PaymentMethodEntity::getPaymentMethod)
+                    .invoke();
+
+                if (savedMethod == null) {
+                    return stepEffects()
+                        .updateState(currentState()
+                            .withStatus(WorkflowStatus.PAYMENT_FAILED)
+                            .withFailureReason("Saved payment method not found")
+                        )
+                        .thenTransitionTo(PaymentProcessingWorkflow::paymentFailedStep);
+                }
+
+                paymentToken = savedMethod.token();
+            } catch (Exception e) {
+                return stepEffects()
+                    .updateState(currentState()
+                        .withStatus(WorkflowStatus.PAYMENT_FAILED)
+                        .withFailureReason("Failed to retrieve saved payment method: " + e.getMessage())
+                    )
+                    .thenTransitionTo(PaymentProcessingWorkflow::paymentFailedStep);
+            }
+        } else {
+            // Using a new card token directly
+            paymentToken = currentState().paymentSource;
+        }
+
         // Call Stripe to authorize payment
         var paymentResult = stripeGateway.authorizePayment(
-            currentState().cardToken,
+            paymentToken,
             currentState().amount,
             "Payment for " + currentState().merchantReference,
             currentState().transactionId  // Idempotency key

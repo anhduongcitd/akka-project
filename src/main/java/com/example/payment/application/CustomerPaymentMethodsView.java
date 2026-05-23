@@ -13,83 +13,105 @@ import java.time.YearMonth;
 import java.util.List;
 
 /**
- * Customer Payment Methods View.
- * Queries saved payment methods by customer ID.
- * Aligned with FR-010: Display saved payment methods for quick selection.
+ * View for querying customer's saved payment methods.
+ * Aligned with FR-010: Allow users to save payment methods for faster checkout.
  */
 @Component(id = "customer-payment-methods-view")
 public class CustomerPaymentMethodsView extends View {
 
+    /**
+     * Entry representing a saved payment method in the view.
+     */
     public record PaymentMethodEntry(
         String paymentMethodId,
         String customerId,
         CardBrand brand,
         String last4Digits,
-        String expirationDate,
+        String expirationDate,  // Stored as "yyyy-MM" format
         boolean isDefault,
         boolean isExpired,
         boolean isExpiringSoon,
         Instant createdAt
     ) {}
 
-    public record PaymentMethodEntries(List<PaymentMethodEntry> methods) {}
+    /**
+     * Response wrapper for multiple payment methods.
+     */
+    public record PaymentMethods(List<PaymentMethodEntry> methods) {}
 
-    @Query("SELECT * AS methods FROM payment_methods WHERE customerId = :customerId ORDER BY isDefault DESC, createdAt DESC")
-    public QueryEffect<PaymentMethodEntries> getByCustomerId(String customerId) {
+    @Query("SELECT * AS methods FROM customer_payment_methods WHERE customerId = :customerId ORDER BY isDefault DESC, createdAt DESC")
+    public QueryEffect<PaymentMethods> getByCustomer(String customerId) {
         return queryResult();
     }
 
+    @Query("SELECT * AS methods FROM customer_payment_methods WHERE customerId = :customerId AND isDefault = true")
+    public QueryEffect<PaymentMethods> getDefaultByCustomer(String customerId) {
+        return queryResult();
+    }
+
+    @Query("SELECT * AS methods FROM customer_payment_methods WHERE isExpiringSoon = true ORDER BY expirationDate ASC")
+    public QueryEffect<PaymentMethods> getExpiringSoon() {
+        return queryResult();
+    }
+
+    /**
+     * Table updater for payment method events.
+     */
     @Consume.FromEventSourcedEntity(PaymentMethodEntity.class)
-    public static class PaymentMethodsTableUpdater extends TableUpdater<PaymentMethodEntry> {
+    public static class CustomerPaymentMethodsUpdater extends TableUpdater<PaymentMethodEntry> {
 
         public Effect<PaymentMethodEntry> onEvent(PaymentMethodEvent event) {
-            String paymentMethodId = updateContext().eventSubject().orElse("");
+            var paymentMethodId = updateContext().eventSubject().orElse("");
 
             return switch (event) {
                 case PaymentMethodEvent.PaymentMethodSaved saved -> {
-                    YearMonth expiration = saved.expirationDate();
-                    YearMonth now = YearMonth.now();
-
-                    boolean isExpired = now.isAfter(expiration);
-                    boolean isExpiringSoon = !isExpired &&
-                        java.time.temporal.ChronoUnit.MONTHS.between(now, expiration) <= 1;
-
                     var entry = new PaymentMethodEntry(
                         paymentMethodId,
                         saved.customerId(),
                         saved.brand(),
                         saved.last4Digits(),
-                        saved.expirationDate().toString(),
+                        saved.expirationDate().toString(), // Convert YearMonth to String
                         saved.isDefault(),
-                        isExpired,
-                        isExpiringSoon,
+                        isExpired(saved.expirationDate()),
+                        isExpiringSoon(saved.expirationDate()),
                         saved.timestamp()
                     );
                     yield effects().updateRow(entry);
                 }
 
                 case PaymentMethodEvent.PaymentMethodSetDefault setDefault -> {
-                    var currentRow = rowState();
-                    if (currentRow == null) {
-                        yield effects().ignore();
+                    if (rowState() == null) {
+                        yield effects().ignore(); // Row doesn't exist yet
                     }
                     var updated = new PaymentMethodEntry(
-                        currentRow.paymentMethodId,
-                        currentRow.customerId,
-                        currentRow.brand,
-                        currentRow.last4Digits,
-                        currentRow.expirationDate,
+                        rowState().paymentMethodId,
+                        rowState().customerId,
+                        rowState().brand,
+                        rowState().last4Digits,
+                        rowState().expirationDate,
                         true, // Set as default
-                        currentRow.isExpired,
-                        currentRow.isExpiringSoon,
-                        currentRow.createdAt
+                        rowState().isExpired,
+                        rowState().isExpiringSoon,
+                        rowState().createdAt
                     );
                     yield effects().updateRow(updated);
                 }
 
-                case PaymentMethodEvent.PaymentMethodDeleted deleted ->
-                    effects().deleteRow();
+                case PaymentMethodEvent.PaymentMethodDeleted deleted -> {
+                    // Hard delete from view
+                    yield effects().deleteRow();
+                }
             };
+        }
+
+        private boolean isExpired(YearMonth expirationDate) {
+            return YearMonth.now().isAfter(expirationDate);
+        }
+
+        private boolean isExpiringSoon(YearMonth expirationDate) {
+            YearMonth now = YearMonth.now();
+            long monthsUntilExpiry = now.until(expirationDate, java.time.temporal.ChronoUnit.MONTHS);
+            return monthsUntilExpiry <= 1 && monthsUntilExpiry >= 0;
         }
     }
 }

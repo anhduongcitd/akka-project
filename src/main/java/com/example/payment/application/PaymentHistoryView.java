@@ -8,65 +8,109 @@ import akka.javasdk.view.View;
 import com.example.payment.domain.PaymentStatus;
 import com.example.payment.domain.PaymentTransactionEvent;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
 /**
- * Payment History View.
- * Queries payment transaction history with filtering capabilities.
- * Aligned with FR-014: Complete audit trail of all transactions.
+ * View for querying payment transaction history.
+ * Aligned with FR-012: View transaction history with filtering.
  */
 @Component(id = "payment-history-view")
 public class PaymentHistoryView extends View {
 
+    /**
+     * Entry representing a payment transaction in the view.
+     * Note: status is stored as String to enable querying.
+     * completedAt uses Instant.EPOCH (1970-01-01) as sentinel for null.
+     * failureReason uses empty string as sentinel for null.
+     */
     public record PaymentHistoryEntry(
         String transactionId,
         String customerId,
         String customerEmail,
-        String customerName,
-        BigDecimal amount,
-        String currency,
-        PaymentStatus status,
         String merchantReference,
-        String gatewayTransactionId,
+        String amountValue,
+        String currency,
+        String status,  // Stored as String for querying
         Instant createdAt,
-        Instant completedAt,
-        String failureReason,
-        boolean hasRefunds
+        Instant completedAt,  // Use Instant.EPOCH for null
+        String failureReason  // Use "" for null
     ) {}
 
+    /**
+     * Response wrapper for multiple payment history entries.
+     */
     public record PaymentHistoryEntries(List<PaymentHistoryEntry> transactions) {}
 
-    // Query parameter records
+    /**
+     * Query all transactions for a customer, ordered by most recent first.
+     */
+    @Query("SELECT * AS transactions FROM payment_history WHERE customerId = :customerId ORDER BY createdAt DESC")
+    public QueryEffect<PaymentHistoryEntries> getByCustomer(String customerId) {
+        return queryResult();
+    }
+
+    /**
+     * Query filter for status-based searches.
+     */
     public record StatusFilter(String customerId, String status) {}
+
+    /**
+     * Query filter for date range searches.
+     */
     public record DateRangeFilter(String customerId, Instant startDate, Instant endDate) {}
 
-    @Query("SELECT * AS transactions FROM payment_history WHERE customerId = :customerId ORDER BY createdAt DESC")
-    public QueryEffect<PaymentHistoryEntries> getByCustomerId(String customerId) {
-        return queryResult();
-    }
-
+    /**
+     * Query transactions for a customer with status filter.
+     */
     @Query("SELECT * AS transactions FROM payment_history WHERE customerId = :customerId AND status = :status ORDER BY createdAt DESC")
-    public QueryEffect<PaymentHistoryEntries> getByCustomerIdAndStatus(StatusFilter filter) {
+    public QueryEffect<PaymentHistoryEntries> getByCustomerAndStatus(StatusFilter filter) {
         return queryResult();
     }
 
+    /**
+     * Query transactions within a date range for a customer.
+     */
     @Query("SELECT * AS transactions FROM payment_history WHERE customerId = :customerId AND createdAt >= :startDate AND createdAt <= :endDate ORDER BY createdAt DESC")
-    public QueryEffect<PaymentHistoryEntries> getByCustomerIdAndDateRange(DateRangeFilter filter) {
+    public QueryEffect<PaymentHistoryEntries> getByCustomerAndDateRange(DateRangeFilter filter) {
         return queryResult();
     }
 
-    @Query("SELECT * AS transactions FROM payment_history WHERE merchantReference = :merchantReference")
+    /**
+     * Query successful transactions for a customer.
+     */
+    @Query("SELECT * AS transactions FROM payment_history WHERE customerId = :customerId AND status = 'SUCCEEDED' ORDER BY createdAt DESC")
+    public QueryEffect<PaymentHistoryEntries> getSuccessfulTransactions(String customerId) {
+        return queryResult();
+    }
+
+    /**
+     * Query failed transactions for a customer.
+     */
+    @Query("SELECT * AS transactions FROM payment_history WHERE customerId = :customerId AND status = 'FAILED' ORDER BY createdAt DESC")
+    public QueryEffect<PaymentHistoryEntries> getFailedTransactions(String customerId) {
+        return queryResult();
+    }
+
+    /**
+     * Query transactions by merchant reference.
+     */
+    @Query("SELECT * AS transactions FROM payment_history WHERE merchantReference = :merchantReference ORDER BY createdAt DESC")
     public QueryEffect<PaymentHistoryEntries> getByMerchantReference(String merchantReference) {
         return queryResult();
     }
 
+    // Note: COUNT queries are not directly supported in Akka views.
+    // Use the list query and count on the client side.
+
+    /**
+     * Table updater for payment transaction events.
+     */
     @Consume.FromEventSourcedEntity(PaymentTransactionEntity.class)
-    public static class PaymentHistoryTableUpdater extends TableUpdater<PaymentHistoryEntry> {
+    public static class PaymentHistoryUpdater extends TableUpdater<PaymentHistoryEntry> {
 
         public Effect<PaymentHistoryEntry> onEvent(PaymentTransactionEvent event) {
-            String transactionId = updateContext().eventSubject().orElse("");
+            var transactionId = updateContext().eventSubject().orElse("");
 
             return switch (event) {
                 case PaymentTransactionEvent.PaymentInitiated initiated -> {
@@ -74,137 +118,58 @@ public class PaymentHistoryView extends View {
                         transactionId,
                         initiated.customer().customerId(),
                         initiated.customer().email(),
-                        initiated.customer().name(),
-                        initiated.amount().amount(),
-                        initiated.amount().currency().name(),
-                        PaymentStatus.PENDING,
                         initiated.merchantReference(),
-                        null,
+                        initiated.amount().amount().toPlainString(),
+                        initiated.amount().currency().name(),
+                        "PENDING",
                         initiated.timestamp(),
-                        null,
-                        null,
-                        false
+                        Instant.EPOCH,  // Sentinel for null
+                        ""  // Sentinel for null
                     );
                     yield effects().updateRow(entry);
                 }
 
-                case PaymentTransactionEvent.PaymentAuthorized authorized -> {
-                    var currentRow = rowState();
-                    if (currentRow == null) {
-                        yield effects().ignore();
-                    }
-                    var updated = new PaymentHistoryEntry(
-                        currentRow.transactionId,
-                        currentRow.customerId,
-                        currentRow.customerEmail,
-                        currentRow.customerName,
-                        currentRow.amount,
-                        currentRow.currency,
-                        PaymentStatus.AUTHORIZED,
-                        currentRow.merchantReference,
-                        authorized.gatewayTransactionId(),
-                        currentRow.createdAt,
-                        currentRow.completedAt,
-                        currentRow.failureReason,
-                        currentRow.hasRefunds
-                    );
-                    yield effects().updateRow(updated);
-                }
-
                 case PaymentTransactionEvent.PaymentSucceeded succeeded -> {
-                    var currentRow = rowState();
-                    if (currentRow == null) {
-                        yield effects().ignore();
+                    if (rowState() == null) {
+                        yield effects().ignore(); // Row doesn't exist yet
                     }
                     var updated = new PaymentHistoryEntry(
-                        currentRow.transactionId,
-                        currentRow.customerId,
-                        currentRow.customerEmail,
-                        currentRow.customerName,
-                        currentRow.amount,
-                        currentRow.currency,
-                        PaymentStatus.SUCCEEDED,
-                        currentRow.merchantReference,
-                        currentRow.gatewayTransactionId,
-                        currentRow.createdAt,
+                        rowState().transactionId,
+                        rowState().customerId,
+                        rowState().customerEmail,
+                        rowState().merchantReference,
+                        rowState().amountValue,
+                        rowState().currency,
+                        "SUCCEEDED",
+                        rowState().createdAt,
                         succeeded.timestamp(),
-                        currentRow.failureReason,
-                        currentRow.hasRefunds
+                        ""  // Sentinel for null
                     );
                     yield effects().updateRow(updated);
                 }
 
                 case PaymentTransactionEvent.PaymentFailed failed -> {
-                    var currentRow = rowState();
-                    if (currentRow == null) {
-                        yield effects().ignore();
+                    if (rowState() == null) {
+                        yield effects().ignore(); // Row doesn't exist yet
                     }
                     var updated = new PaymentHistoryEntry(
-                        currentRow.transactionId,
-                        currentRow.customerId,
-                        currentRow.customerEmail,
-                        currentRow.customerName,
-                        currentRow.amount,
-                        currentRow.currency,
-                        PaymentStatus.FAILED,
-                        currentRow.merchantReference,
-                        currentRow.gatewayTransactionId,
-                        currentRow.createdAt,
+                        rowState().transactionId,
+                        rowState().customerId,
+                        rowState().customerEmail,
+                        rowState().merchantReference,
+                        rowState().amountValue,
+                        rowState().currency,
+                        "FAILED",
+                        rowState().createdAt,
                         failed.timestamp(),
-                        failed.reason(),
-                        currentRow.hasRefunds
+                        failed.reason()
                     );
                     yield effects().updateRow(updated);
                 }
 
-                case PaymentTransactionEvent.RefundInitiated refundInitiated -> {
-                    var currentRow = rowState();
-                    if (currentRow == null) {
-                        yield effects().ignore();
-                    }
-                    var updated = new PaymentHistoryEntry(
-                        currentRow.transactionId,
-                        currentRow.customerId,
-                        currentRow.customerEmail,
-                        currentRow.customerName,
-                        currentRow.amount,
-                        currentRow.currency,
-                        currentRow.status,
-                        currentRow.merchantReference,
-                        currentRow.gatewayTransactionId,
-                        currentRow.createdAt,
-                        currentRow.completedAt,
-                        currentRow.failureReason,
-                        true // Has refunds
-                    );
-                    yield effects().updateRow(updated);
-                }
-
-                case PaymentTransactionEvent.PaymentRefunded refunded -> {
-                    var currentRow = rowState();
-                    if (currentRow == null) {
-                        yield effects().ignore();
-                    }
-                    var updated = new PaymentHistoryEntry(
-                        currentRow.transactionId,
-                        currentRow.customerId,
-                        currentRow.customerEmail,
-                        currentRow.customerName,
-                        currentRow.amount,
-                        currentRow.currency,
-                        currentRow.status,
-                        currentRow.merchantReference,
-                        currentRow.gatewayTransactionId,
-                        currentRow.createdAt,
-                        currentRow.completedAt,
-                        currentRow.failureReason,
-                        true // Has refunds
-                    );
-                    yield effects().updateRow(updated);
-                }
-
-                case PaymentTransactionEvent.PaymentCaptured captured ->
-                    effects().ignore();
+                // Ignore intermediate state changes (authorized, captured)
+                // These don't affect the history view which shows final outcomes
+                default -> effects().ignore();
             };
         }
     }

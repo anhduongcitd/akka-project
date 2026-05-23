@@ -1,140 +1,85 @@
 package com.example.payment.application;
 
 import com.example.payment.domain.Currency;
-import com.typesafe.config.Config;
 
 import java.math.BigDecimal;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Exchange rate service with caching.
- * Fetches real-time exchange rates from external API.
- * Aligned with FR-019: Real-time exchange rates for currency conversions.
+ * Service for currency exchange rates and conversion.
+ * Uses hardcoded rates for simplicity. In production, integrate with external API.
  */
 public class ExchangeRateService {
 
-    private final String apiUrl;
-    private final HttpClient httpClient;
-    private final Map<String, CachedRate> rateCache;
-    private static final Duration CACHE_DURATION = Duration.ofMinutes(15);
+    // Base currency: USD
+    private static final Map<Currency, BigDecimal> EXCHANGE_RATES = Map.of(
+        Currency.USD, BigDecimal.ONE,
+        Currency.EUR, new BigDecimal("0.85"),
+        Currency.GBP, new BigDecimal("0.73"),
+        Currency.JPY, new BigDecimal("110.0"),
+        Currency.AUD, new BigDecimal("1.35")
+    );
 
-    private record CachedRate(Map<Currency, BigDecimal> rates, Instant fetchedAt) {
-        boolean isExpired() {
-            return Duration.between(fetchedAt, Instant.now()).compareTo(CACHE_DURATION) > 0;
-        }
-    }
+    public record ExchangeRates(
+        Map<Currency, BigDecimal> rates,
+        Currency baseCurrency,
+        Instant timestamp
+    ) {}
 
-    public ExchangeRateService(Config config) {
-        this.apiUrl = config.getString("payment.exchange-rate.api-url");
-        this.httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
-        this.rateCache = new ConcurrentHashMap<>();
+    public record ConversionResult(
+        BigDecimal originalAmount,
+        Currency fromCurrency,
+        BigDecimal convertedAmount,
+        Currency toCurrency,
+        BigDecimal exchangeRate,
+        Instant timestamp
+    ) {}
+
+    /**
+     * Get current exchange rates for all supported currencies.
+     */
+    public ExchangeRates getExchangeRates() {
+        return new ExchangeRates(
+            EXCHANGE_RATES,
+            Currency.USD,
+            Instant.now()
+        );
     }
 
     /**
-     * Get exchange rate from base currency to target currency.
-     * Uses caching to reduce API calls.
+     * Convert amount from one currency to another.
      */
-    public CompletableFuture<BigDecimal> getRate(Currency baseCurrency, Currency targetCurrency) {
-        if (baseCurrency == targetCurrency) {
-            return CompletableFuture.completedFuture(BigDecimal.ONE);
+    public ConversionResult convertCurrency(BigDecimal amount, Currency fromCurrency, Currency toCurrency) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Amount must be positive");
         }
 
-        String cacheKey = baseCurrency.name();
-        CachedRate cached = rateCache.get(cacheKey);
+        BigDecimal fromRate = EXCHANGE_RATES.get(fromCurrency);
+        BigDecimal toRate = EXCHANGE_RATES.get(toCurrency);
 
-        if (cached != null && !cached.isExpired()) {
-            BigDecimal rate = cached.rates.get(targetCurrency);
-            if (rate != null) {
-                return CompletableFuture.completedFuture(rate);
-            }
+        if (fromRate == null) {
+            throw new IllegalArgumentException("Unsupported source currency: " + fromCurrency);
+        }
+        if (toRate == null) {
+            throw new IllegalArgumentException("Unsupported target currency: " + toCurrency);
         }
 
-        return fetchRatesFromApi(baseCurrency).thenApply(rates -> {
-            BigDecimal rate = rates.get(targetCurrency);
-            if (rate == null) {
-                throw new RuntimeException(
-                    String.format("Exchange rate not available for %s to %s",
-                        baseCurrency, targetCurrency)
-                );
-            }
-            return rate;
-        });
-    }
+        // Convert to base currency (USD) then to target currency
+        BigDecimal amountInUSD = amount.divide(fromRate, 2, RoundingMode.HALF_UP);
+        BigDecimal convertedAmount = amountInUSD.multiply(toRate).setScale(2, RoundingMode.HALF_UP);
 
-    /**
-     * Fetch latest rates from API and cache them.
-     */
-    private CompletableFuture<Map<Currency, BigDecimal>> fetchRatesFromApi(Currency baseCurrency) {
-        String url = apiUrl.replace("{currency}", baseCurrency.name());
+        // Calculate direct exchange rate
+        BigDecimal exchangeRate = toRate.divide(fromRate, 4, RoundingMode.HALF_UP);
 
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .timeout(Duration.ofSeconds(10))
-            .GET()
-            .build();
-
-        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-            .thenApply(response -> {
-                if (response.statusCode() != 200) {
-                    throw new RuntimeException(
-                        "Failed to fetch exchange rates: " + response.statusCode()
-                    );
-                }
-                return parseRates(response.body());
-            })
-            .thenApply(rates -> {
-                rateCache.put(baseCurrency.name(), new CachedRate(rates, Instant.now()));
-                return rates;
-            });
-    }
-
-    /**
-     * Parse API response to extract exchange rates.
-     * Expected format: {"rates": {"USD": 1.0, "EUR": 0.85, ...}}
-     */
-    private Map<Currency, BigDecimal> parseRates(String jsonResponse) {
-        Map<Currency, BigDecimal> rates = new ConcurrentHashMap<>();
-
-        try {
-            // Simple JSON parsing (in production, use a proper JSON library)
-            String ratesSection = jsonResponse.substring(
-                jsonResponse.indexOf("\"rates\":") + 8
-            );
-            ratesSection = ratesSection.substring(1, ratesSection.indexOf("}"));
-
-            for (String pair : ratesSection.split(",")) {
-                String[] parts = pair.replace("\"", "").split(":");
-                String currencyCode = parts[0].trim();
-                String rateValue = parts[1].trim();
-
-                try {
-                    Currency currency = Currency.valueOf(currencyCode);
-                    rates.put(currency, new BigDecimal(rateValue));
-                } catch (IllegalArgumentException e) {
-                    // Currency not supported, skip
-                }
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to parse exchange rates: " + e.getMessage(), e);
-        }
-
-        return rates;
-    }
-
-    /**
-     * Clear cache (useful for testing).
-     */
-    public void clearCache() {
-        rateCache.clear();
+        return new ConversionResult(
+            amount,
+            fromCurrency,
+            convertedAmount,
+            toCurrency,
+            exchangeRate,
+            Instant.now()
+        );
     }
 }

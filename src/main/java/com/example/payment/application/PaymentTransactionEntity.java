@@ -45,6 +45,8 @@ public class PaymentTransactionEntity extends EventSourcedEntity<PaymentTransact
 
     public record CompleteRefund(String refundId) {}
 
+    public record FailRefund(String refundId, String reason) {}
+
     // Command handlers
     public Effect<String> initiatePayment(InitiatePayment command) {
         if (currentState() != null) {
@@ -141,8 +143,7 @@ public class PaymentTransactionEntity extends EventSourcedEntity<PaymentTransact
         var event = new PaymentTransactionEvent.RefundInitiated(
             command.refundId,
             command.amount,
-            command.reason,
-            Instant.now()
+            command.reason
         );
 
         return effects()
@@ -168,15 +169,68 @@ public class PaymentTransactionEntity extends EventSourcedEntity<PaymentTransact
             return effects().error("Refund already processed");
         }
 
-        var event = new PaymentTransactionEvent.PaymentRefunded(
+        var event = new PaymentTransactionEvent.RefundCompleted(
             command.refundId,
-            refund.amount(),
-            Instant.now()
+            null // Gateway refund ID set by workflow
         );
 
         return effects()
             .persist(event)
             .thenReply(state -> "Refund completed");
+    }
+
+    public Effect<String> failRefund(FailRefund command) {
+        if (currentState() == null) {
+            return effects().error("Payment not found");
+        }
+
+        var refund = currentState().refunds().stream()
+            .filter(r -> r.refundId().equals(command.refundId))
+            .findFirst()
+            .orElse(null);
+
+        if (refund == null) {
+            return effects().error("Refund not found");
+        }
+
+        if (refund.status() != RefundStatus.PENDING) {
+            return effects().error("Refund already processed");
+        }
+
+        var event = new PaymentTransactionEvent.RefundFailed(
+            command.refundId,
+            command.reason
+        );
+
+        return effects()
+            .persist(event)
+            .thenReply(state -> "Refund failed");
+    }
+
+    // Methods for workflow integration
+    public Effect<akka.Done> recordRefundInitiated(PaymentTransactionEvent.RefundInitiated event) {
+        return effects()
+            .persist(event)
+            .thenReply(state -> akka.Done.getInstance());
+    }
+
+    public Effect<akka.Done> recordRefundCompleted(PaymentTransactionEvent.RefundCompleted event) {
+        return effects()
+            .persist(event)
+            .thenReply(state -> akka.Done.getInstance());
+    }
+
+    public Effect<akka.Done> recordRefundFailed(PaymentTransactionEvent.RefundFailed event) {
+        return effects()
+            .persist(event)
+            .thenReply(state -> akka.Done.getInstance());
+    }
+
+    public Effect<PaymentTransaction> getTransaction() {
+        if (currentState() == null) {
+            return effects().reply(null);
+        }
+        return effects().reply(currentState());
     }
 
     // Query command
@@ -231,20 +285,20 @@ public class PaymentTransactionEntity extends EventSourcedEntity<PaymentTransact
                     refundInitiated.refundAmount(),
                     refundInitiated.reason(),
                     RefundStatus.PENDING,
-                    refundInitiated.timestamp(),
+                    Instant.now(),
                     null
                 );
                 yield currentState().addRefund(refund);
             }
 
-            case PaymentTransactionEvent.PaymentRefunded refunded -> {
+            case PaymentTransactionEvent.RefundCompleted refundCompleted -> {
                 var updatedRefunds = new ArrayList<>(currentState().refunds());
                 for (int i = 0; i < updatedRefunds.size(); i++) {
-                    if (updatedRefunds.get(i).refundId().equals(refunded.refundId())) {
+                    if (updatedRefunds.get(i).refundId().equals(refundCompleted.refundId())) {
                         updatedRefunds.set(i,
                             updatedRefunds.get(i)
                                 .withStatus(RefundStatus.SUCCEEDED)
-                                .withCompletedAt(refunded.timestamp())
+                                .withCompletedAt(Instant.now())
                         );
                         break;
                     }
@@ -268,6 +322,32 @@ public class PaymentTransactionEntity extends EventSourcedEntity<PaymentTransact
                     currentState().customer(),
                     currentState().amount(),
                     newStatus,
+                    currentState().merchantReference(),
+                    currentState().gatewayTransactionId(),
+                    updatedRefunds,
+                    currentState().createdAt(),
+                    currentState().completedAt(),
+                    currentState().failureReason()
+                );
+            }
+
+            case PaymentTransactionEvent.RefundFailed refundFailed -> {
+                var updatedRefunds = new ArrayList<>(currentState().refunds());
+                for (int i = 0; i < updatedRefunds.size(); i++) {
+                    if (updatedRefunds.get(i).refundId().equals(refundFailed.refundId())) {
+                        updatedRefunds.set(i,
+                            updatedRefunds.get(i)
+                                .withStatus(RefundStatus.FAILED)
+                        );
+                        break;
+                    }
+                }
+
+                yield new PaymentTransaction(
+                    currentState().transactionId(),
+                    currentState().customer(),
+                    currentState().amount(),
+                    currentState().status(),
                     currentState().merchantReference(),
                     currentState().gatewayTransactionId(),
                     updatedRefunds,

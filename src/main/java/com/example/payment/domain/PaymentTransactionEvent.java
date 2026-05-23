@@ -43,14 +43,18 @@ public sealed interface PaymentTransactionEvent {
     record RefundInitiated(
         String refundId,
         Money refundAmount,
-        String reason,
-        Instant timestamp
+        String reason
     ) implements PaymentTransactionEvent {}
 
-    @TypeName("payment-refunded")
-    record PaymentRefunded(
+    @TypeName("payment-refund-completed")
+    record RefundCompleted(
         String refundId,
-        Money refundAmount,
-        Instant timestamp
+        String gatewayRefundId
+    ) implements PaymentTransactionEvent {}
+
+    @TypeName("payment-refund-failed")
+    record RefundFailed(
+        String refundId,
+        String reason
     ) implements PaymentTransactionEvent {}
 }

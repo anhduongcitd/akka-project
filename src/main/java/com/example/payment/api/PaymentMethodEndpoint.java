@@ -1,26 +1,26 @@
 package com.example.payment.api;
 
+import akka.Done;
 import akka.javasdk.annotations.Acl;
 import akka.javasdk.annotations.http.*;
 import akka.javasdk.client.ComponentClient;
+import akka.javasdk.http.AbstractHttpEndpoint;
 import com.example.payment.application.CustomerPaymentMethodsView;
 import com.example.payment.application.PaymentMethodEntity;
 import com.example.payment.domain.CardBrand;
 import com.example.payment.domain.PaymentMethod;
 
 import java.time.YearMonth;
-import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
- * Payment Method REST API Endpoint.
- * Manages saved payment methods for customers.
- * Aligned with FR-010, FR-011: Save and delete payment methods.
+ * Payment Method HTTP Endpoint.
+ * RESTful API for managing saved payment methods.
+ * Aligned with FR-010: Allow users to save payment methods for faster checkout.
  */
 @HttpEndpoint("/payment/methods")
-@Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
-public class PaymentMethodEndpoint {
+@Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
+public class PaymentMethodEndpoint extends AbstractHttpEndpoint {
 
     private final ComponentClient componentClient;
 
@@ -29,12 +29,13 @@ public class PaymentMethodEndpoint {
     }
 
     // Request/Response records
+
     public record SavePaymentMethodRequest(
         String customerId,
-        String token,
-        String brand,
+        String token,           // PCI-compliant token from Stripe
+        String brand,           // Card brand as string
         String last4Digits,
-        String expirationDate, // Format: "YYYY-MM"
+        String expirationDate,  // Format: "yyyy-MM" (e.g., "2025-12")
         boolean isDefault
     ) {}
 
@@ -42,29 +43,37 @@ public class PaymentMethodEndpoint {
         String paymentMethodId,
         String customerId,
         String brand,
-        String maskedNumber,
+        String last4Digits,
         String expirationDate,
+        String maskedNumber,
         boolean isDefault,
         boolean isExpired,
         boolean isExpiringSoon,
         String createdAt
     ) {}
 
-    public record PaymentMethodsListResponse(
-        List<PaymentMethodResponse> methods,
-        int total
+    public record PaymentMethodsResponse(
+        java.util.List<PaymentMethodResponse> methods
     ) {}
 
-    // API Methods
+    // POST /payment/methods - Save a new payment method
     @Post
     public PaymentMethodResponse savePaymentMethod(SavePaymentMethodRequest request) {
         // Validate request
-        if (request.customerId == null || request.token == null) {
-            throw new IllegalArgumentException("Customer ID and token are required");
+        if (request.customerId == null || request.customerId.isBlank()) {
+            throw new IllegalArgumentException("Customer ID is required");
         }
-
+        if (request.token == null || request.token.isBlank()) {
+            throw new IllegalArgumentException("Payment method token is required");
+        }
+        if (request.brand == null || request.brand.isBlank()) {
+            throw new IllegalArgumentException("Card brand is required");
+        }
         if (request.last4Digits == null || !request.last4Digits.matches("\\d{4}")) {
             throw new IllegalArgumentException("Last 4 digits must be exactly 4 digits");
+        }
+        if (request.expirationDate == null || !request.expirationDate.matches("\\d{4}-\\d{2}")) {
+            throw new IllegalArgumentException("Expiration date must be in format yyyy-MM");
         }
 
         // Parse expiration date
@@ -72,25 +81,25 @@ public class PaymentMethodEndpoint {
         try {
             expirationDate = YearMonth.parse(request.expirationDate);
         } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid expiration date format. Use YYYY-MM");
+            throw new IllegalArgumentException("Invalid expiration date format");
         }
 
         // Parse card brand
-        CardBrand brand;
+        CardBrand cardBrand;
         try {
-            brand = CardBrand.valueOf(request.brand.toUpperCase());
-        } catch (Exception e) {
+            cardBrand = CardBrand.valueOf(request.brand.toUpperCase());
+        } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid card brand: " + request.brand);
         }
 
-        // Generate payment method ID
-        String paymentMethodId = "pm_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        // Generate unique payment method ID
+        String paymentMethodId = UUID.randomUUID().toString();
 
-        // Save payment method
-        var command = new PaymentMethodEntity.SavePaymentMethod(
+        // Save payment method via entity
+        var command = new PaymentMethodEntity.SavePaymentMethodCommand(
             request.customerId,
             request.token,
-            brand,
+            cardBrand,
             request.last4Digits,
             expirationDate,
             request.isDefault
@@ -101,91 +110,86 @@ public class PaymentMethodEndpoint {
             .method(PaymentMethodEntity::savePaymentMethod)
             .invoke(command);
 
-        // Return response
-        return new PaymentMethodResponse(
-            paymentMethodId,
-            request.customerId,
-            brand.name(),
-            "**** " + request.last4Digits,
-            expirationDate.toString(),
-            request.isDefault,
-            false, // Not expired (validated during save)
-            false, // Will be calculated by view
-            java.time.Instant.now().toString()
-        );
-    }
-
-    @Get("/customer/{customerId}")
-    public PaymentMethodsListResponse listPaymentMethods(String customerId) {
-        if (customerId == null || customerId.isBlank()) {
-            throw new IllegalArgumentException("Customer ID is required");
-        }
-
-        // Query view
-        var entries = componentClient
-            .forView()
-            .method(CustomerPaymentMethodsView::getByCustomerId)
-            .invoke(customerId);
-
-        var methods = entries.methods().stream()
-            .map(this::toPaymentMethodResponse)
-            .collect(Collectors.toList());
-
-        return new PaymentMethodsListResponse(methods, methods.size());
-    }
-
-    @Delete("/{paymentMethodId}")
-    public String deletePaymentMethod(String paymentMethodId) {
-        var command = new PaymentMethodEntity.DeletePaymentMethod();
-
-        String result = componentClient
-            .forEventSourcedEntity(paymentMethodId)
-            .method(PaymentMethodEntity::deletePaymentMethod)
-            .invoke(command);
-
-        return result;
-    }
-
-    @Put("/{paymentMethodId}/default")
-    public String setDefaultPaymentMethod(String paymentMethodId) {
-        var command = new PaymentMethodEntity.SetDefaultPaymentMethod();
-
-        String result = componentClient
-            .forEventSourcedEntity(paymentMethodId)
-            .method(PaymentMethodEntity::setDefault)
-            .invoke(command);
-
-        return result;
-    }
-
-    @Get("/{paymentMethodId}")
-    public PaymentMethodResponse getPaymentMethod(String paymentMethodId) {
-        PaymentMethod paymentMethod = componentClient
+        // Retrieve saved payment method
+        var savedMethod = componentClient
             .forEventSourcedEntity(paymentMethodId)
             .method(PaymentMethodEntity::getPaymentMethod)
             .invoke();
 
-        return new PaymentMethodResponse(
-            paymentMethod.paymentMethodId(),
-            paymentMethod.customerId(),
-            paymentMethod.brand().name(),
-            paymentMethod.getMaskedNumber(),
-            paymentMethod.expirationDate().toString(),
-            paymentMethod.isDefault(),
-            paymentMethod.isExpired(),
-            paymentMethod.isExpiringSoon(),
-            paymentMethod.createdAt().toString()
+        return toApiResponse(savedMethod);
+    }
+
+    // GET /payment/methods?customerId={customerId} - List customer's payment methods
+    @Get
+    public PaymentMethodsResponse listPaymentMethods() {
+        var customerId = requestContext().queryParams().getString("customerId")
+            .orElseThrow(() -> new IllegalArgumentException("customerId query parameter is required"));
+
+        var viewResult = componentClient
+            .forView()
+            .method(CustomerPaymentMethodsView::getByCustomer)
+            .invoke(customerId);
+
+        return new PaymentMethodsResponse(
+            viewResult.methods().stream()
+                .map(this::toApiResponse)
+                .toList()
         );
     }
 
-    // Helper methods
-    private PaymentMethodResponse toPaymentMethodResponse(CustomerPaymentMethodsView.PaymentMethodEntry entry) {
+    // DELETE /payment/methods/{id} - Delete a payment method
+    @Delete("/{paymentMethodId}")
+    public Done deletePaymentMethod(String paymentMethodId) {
+        componentClient
+            .forEventSourcedEntity(paymentMethodId)
+            .method(PaymentMethodEntity::delete)
+            .invoke();
+
+        return Done.getInstance();
+    }
+
+    // PUT /payment/methods/{id}/default - Set payment method as default
+    @Put("/{paymentMethodId}/default")
+    public PaymentMethodResponse setAsDefault(String paymentMethodId) {
+        componentClient
+            .forEventSourcedEntity(paymentMethodId)
+            .method(PaymentMethodEntity::setAsDefault)
+            .invoke();
+
+        // Retrieve updated payment method
+        var updatedMethod = componentClient
+            .forEventSourcedEntity(paymentMethodId)
+            .method(PaymentMethodEntity::getPaymentMethod)
+            .invoke();
+
+        return toApiResponse(updatedMethod);
+    }
+
+    // Private helper methods
+
+    private PaymentMethodResponse toApiResponse(PaymentMethod method) {
+        return new PaymentMethodResponse(
+            method.paymentMethodId(),
+            method.customerId(),
+            method.brand().name(),
+            method.last4Digits(),
+            method.expirationDate().toString(),
+            method.getMaskedNumber(),
+            method.isDefault(),
+            method.isExpired(),
+            method.isExpiringSoon(),
+            method.createdAt().toString()
+        );
+    }
+
+    private PaymentMethodResponse toApiResponse(CustomerPaymentMethodsView.PaymentMethodEntry entry) {
         return new PaymentMethodResponse(
             entry.paymentMethodId(),
             entry.customerId(),
             entry.brand().name(),
-            "**** " + entry.last4Digits(),
+            entry.last4Digits(),
             entry.expirationDate(),
+            "**** " + entry.last4Digits(),
             entry.isDefault(),
             entry.isExpired(),
             entry.isExpiringSoon(),

@@ -17,6 +17,7 @@ public record PaymentMethod(
     String last4Digits,
     YearMonth expirationDate,
     boolean isDefault,
+    boolean isDeleted,         // Soft delete flag
     Instant createdAt
 ) {
     public PaymentMethod {
@@ -62,7 +63,14 @@ public record PaymentMethod(
     public PaymentMethod withIsDefault(boolean isDefault) {
         return new PaymentMethod(
             paymentMethodId, customerId, token, brand,
-            last4Digits, expirationDate, isDefault, createdAt
+            last4Digits, expirationDate, isDefault, isDeleted, createdAt
+        );
+    }
+
+    public PaymentMethod withDeleted(boolean deleted) {
+        return new PaymentMethod(
+            paymentMethodId, customerId, token, brand,
+            last4Digits, expirationDate, isDefault, deleted, createdAt
         );
     }
 

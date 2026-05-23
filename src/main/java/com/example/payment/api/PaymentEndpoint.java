@@ -5,10 +5,8 @@ import akka.javasdk.annotations.http.HttpEndpoint;
 import akka.javasdk.annotations.http.Get;
 import akka.javasdk.annotations.http.Post;
 import akka.javasdk.client.ComponentClient;
-import com.example.payment.application.PaymentHistoryView;
-import com.example.payment.application.PaymentProcessingWorkflow;
-import com.example.payment.application.PaymentTransactionEntity;
-import com.example.payment.application.ReceiptGenerator;
+import akka.javasdk.http.AbstractHttpEndpoint;
+import com.example.payment.application.*;
 import com.example.payment.domain.*;
 
 import java.math.BigDecimal;
@@ -23,25 +21,40 @@ import java.util.stream.Collectors;
  * Aligned with FR-001 to FR-021: All payment functional requirements.
  */
 @HttpEndpoint("/payment")
-@Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
-public class PaymentEndpoint {
+public class PaymentEndpoint extends AbstractHttpEndpoint {
 
     private final ComponentClient componentClient;
     private final ReceiptGenerator receiptGenerator;
+    private final ExchangeRateService exchangeRateService;
 
-    public PaymentEndpoint(ComponentClient componentClient) {
+    // Rate limit configuration
+    private static final int IP_MAX_REQUESTS = 100;
+    private static final int IP_WINDOW_MINUTES = 1;
+    private static final int CUSTOMER_MAX_PAYMENTS = 50;
+    private static final int CUSTOMER_WINDOW_MINUTES = 60;
+
+    // Fraud detection configuration
+    private static final int FRAUD_VELOCITY_LIMIT = 5;      // Max 5 payments
+    private static final int FRAUD_VELOCITY_WINDOW = 10;    // in 10 minutes
+    private static final BigDecimal FRAUD_HIGH_VALUE = new BigDecimal("5000.00");  // $5000
+    private static final int FRAUD_HIGH_VALUE_WINDOW = 60;  // in 1 hour
+    private static final int FRAUD_DUPLICATE_WINDOW = 5;    // 5 minutes
+
+    public PaymentEndpoint(ComponentClient componentClient, ReceiptGenerator receiptGenerator, ExchangeRateService exchangeRateService) {
         this.componentClient = componentClient;
-        this.receiptGenerator = new ReceiptGenerator();
+        this.receiptGenerator = receiptGenerator;
+        this.exchangeRateService = exchangeRateService;
     }
 
     // Request/Response records
     public record CreatePaymentRequest(
         MoneyRequest amount,
-        String cardToken,
-        String paymentMethodId,  // Optional: use saved payment method
+        String cardToken,              // For new card payments (mutually exclusive with paymentMethodId)
+        String paymentMethodId,        // For saved payment method (mutually exclusive with cardToken)
         String merchantReference,
         CustomerRequest customer,
-        boolean savePaymentMethod
+        boolean savePaymentMethod,     // Only applies when using cardToken
+        String idempotencyKey          // Optional: prevent duplicate payments
     ) {}
 
     public record MoneyRequest(String value, String currency) {
@@ -75,34 +88,197 @@ public class PaymentEndpoint {
 
     public record MoneyResponse(String value, String currency, String formatted) {}
 
+    public record RefundRequest(
+        MoneyRequest amount,
+        String reason
+    ) {}
+
+    public record RefundResponse(
+        String refundId,
+        String transactionId,
+        String status,
+        MoneyResponse amount,
+        String reason
+    ) {}
+
+    public record RefundListResponse(List<RefundInfo> refunds) {}
+
+    public record RefundInfo(
+        String refundId,
+        MoneyResponse amount,
+        String status,
+        String reason,
+        String createdAt,
+        String completedAt
+    ) {}
+
+    public record PaymentHistoryResponse(List<PaymentHistoryItem> transactions) {}
+
+    public record PaymentHistoryItem(
+        String transactionId,
+        String merchantReference,
+        MoneyResponse amount,
+        String status,
+        String createdAt,
+        String completedAt,
+        String failureReason
+    ) {}
+
+    public record PaymentHistoryRequest(
+        String customerId,
+        String status,      // Optional: filter by status
+        String startDate,   // Optional: filter by date range (ISO instant format)
+        String endDate      // Optional: filter by date range (ISO instant format)
+    ) {}
+
+    public record ExchangeRatesResponse(
+        java.util.Map<String, String> rates,
+        String baseCurrency,
+        String timestamp
+    ) {}
+
+    public record CurrencyConversionRequest(
+        String amount,
+        String fromCurrency,
+        String toCurrency
+    ) {}
+
+    public record CurrencyConversionResponse(
+        MoneyResponse originalAmount,
+        MoneyResponse convertedAmount,
+        String exchangeRate,
+        String timestamp
+    ) {}
+
     // API Methods
     @Post("/transactions")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
     public PaymentResponse createPayment(CreatePaymentRequest request) {
+        // Rate limiting - check IP limit
+        String clientIp = requestContext().requestHeader("X-Forwarded-For")
+            .map(akka.http.javadsl.model.HttpHeader::value)
+            .orElse(requestContext().requestHeader("X-Real-IP")
+                .map(akka.http.javadsl.model.HttpHeader::value)
+                .orElse("unknown"));
+
+        var ipCheckRequest = new RateLimitEntity.CheckRateLimitRequest(
+            clientIp,
+            RateLimitRecord.RateLimitType.IP,
+            IP_MAX_REQUESTS,
+            IP_WINDOW_MINUTES
+        );
+
+        String ipResult = componentClient
+            .forKeyValueEntity("ip:" + clientIp)
+            .method(RateLimitEntity::checkAndRecord)
+            .invoke(ipCheckRequest);
+
+        if ("EXCEEDED".equals(ipResult)) {
+            throw new IllegalArgumentException("Rate limit exceeded for IP address. Please try again later.");
+        }
+
         // Validate request
         if (request.amount == null) {
             throw new IllegalArgumentException("Amount is required");
         }
 
-        // Either cardToken OR paymentMethodId must be provided
+        // Must provide either cardToken or paymentMethodId, but not both
         if (request.cardToken == null && request.paymentMethodId == null) {
-            throw new IllegalArgumentException("Either card token or payment method ID is required");
+            throw new IllegalArgumentException("Either cardToken or paymentMethodId is required");
+        }
+        if (request.cardToken != null && request.paymentMethodId != null) {
+            throw new IllegalArgumentException("Cannot provide both cardToken and paymentMethodId");
         }
 
         if (request.customer == null) {
             throw new IllegalArgumentException("Customer information is required");
         }
 
-        // Determine which token to use
-        String token = request.cardToken != null
-            ? request.cardToken
-            : request.paymentMethodId; // Use saved payment method token
+        // Rate limiting - check customer payment limit
+        var customerCheckRequest = new RateLimitEntity.CheckRateLimitRequest(
+            request.customer.customerId(),
+            RateLimitRecord.RateLimitType.CUSTOMER,
+            CUSTOMER_MAX_PAYMENTS,
+            CUSTOMER_WINDOW_MINUTES
+        );
+
+        String customerResult = componentClient
+            .forKeyValueEntity("customer:" + request.customer.customerId())
+            .method(RateLimitEntity::checkAndRecord)
+            .invoke(customerCheckRequest);
+
+        if ("EXCEEDED".equals(customerResult)) {
+            throw new IllegalArgumentException("Payment limit exceeded for customer. Please try again later.");
+        }
+
+        // Check idempotency key FIRST (before fraud detection)
+        // Legitimate retries with idempotency keys should not be blocked
+        String transactionId;
+        if (request.idempotencyKey != null && !request.idempotencyKey.isBlank()) {
+            // Check if this idempotency key already has a transaction
+            String existingTxnId = componentClient
+                .forKeyValueEntity(request.idempotencyKey)
+                .method(IdempotencyEntity::getTransactionId)
+                .invoke();
+
+            if (existingTxnId != null && !existingTxnId.isEmpty()) {
+                // Return existing transaction (idempotent response - skip fraud check)
+                PaymentTransaction transaction = componentClient
+                    .forEventSourcedEntity(existingTxnId)
+                    .method(PaymentTransactionEntity::getPayment)
+                    .invoke();
+                return toPaymentResponse(transaction);
+            }
+        }
+
+        // Fraud detection - check for suspicious patterns (only for new requests)
+        Money amount = request.amount.toMoney();
+        var fraudCheck = new FraudCheckEntity.CheckFraudRequest(
+            request.merchantReference,
+            amount.amount(),
+            amount.currency().name(),
+            FRAUD_VELOCITY_LIMIT,
+            FRAUD_VELOCITY_WINDOW,
+            FRAUD_HIGH_VALUE,
+            FRAUD_HIGH_VALUE_WINDOW,
+            FRAUD_DUPLICATE_WINDOW
+        );
+
+        var fraudResult = componentClient
+            .forKeyValueEntity("fraud:" + request.customer.customerId())
+            .method(FraudCheckEntity::checkAndRecord)
+            .invoke(fraudCheck);
+
+        if (!fraudResult.passed()) {
+            throw new IllegalArgumentException("Payment blocked: " + fraudResult.reason());
+        }
 
         // Generate transaction ID
-        String transactionId = "txn_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        if (request.idempotencyKey != null && !request.idempotencyKey.isBlank()) {
 
-        // Convert request to domain objects
-        Money amount = request.amount.toMoney();
+            // Generate new transaction ID
+            transactionId = "txn_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+
+            // Register idempotency key with new transaction ID
+            componentClient
+                .forKeyValueEntity(request.idempotencyKey)
+                .method(IdempotencyEntity::register)
+                .invoke(transactionId);
+        } else {
+            // No idempotency key - generate transaction ID normally
+            transactionId = "txn_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        }
+
+        // Validate amount is greater than zero (amount already created for fraud check)
+        if (amount.amount().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Payment amount must be greater than zero");
+        }
+
         Customer customer = request.customer.toCustomer();
+
+        // Determine payment source
+        String paymentSource = request.cardToken != null ? request.cardToken : request.paymentMethodId;
+        boolean isUsingSavedMethod = request.paymentMethodId != null;
 
         // Start payment workflow
         var startCommand = new PaymentProcessingWorkflow.StartPayment(
@@ -110,13 +286,31 @@ public class PaymentEndpoint {
             customer,
             amount,
             request.merchantReference,
-            token
+            paymentSource,
+            isUsingSavedMethod,
+            request.savePaymentMethod && !isUsingSavedMethod // Only save if using new card
         );
 
         componentClient
             .forWorkflow(transactionId)
             .method(PaymentProcessingWorkflow::startPayment)
             .invoke(startCommand);
+
+        // Log payment creation to audit trail
+        var auditEvent = new com.example.payment.domain.AuditEvent.PaymentCreated(
+            customer.customerId(),
+            transactionId,
+            amount.amount().toString(),
+            amount.currency().name(),
+            request.merchantReference,
+            java.time.Instant.now(),
+            "Payment transaction initiated"
+        );
+
+        componentClient
+            .forEventSourcedEntity(customer.customerId())
+            .method(com.example.payment.application.AuditLogEntity::logEvent)
+            .invoke(auditEvent);
 
         // Return immediate response
         return new PaymentResponse(
@@ -131,6 +325,7 @@ public class PaymentEndpoint {
     }
 
     @Get("/transactions/{transactionId}")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
     public PaymentResponse getTransaction(String transactionId) {
         // Get payment transaction from entity
         PaymentTransaction transaction = componentClient
@@ -141,76 +336,158 @@ public class PaymentEndpoint {
         return toPaymentResponse(transaction);
     }
 
-    @Get("/history/{customerId}")
-    public PaymentHistoryResponse getPaymentHistory(String customerId) {
-        // Query payment history view
-        var entries = componentClient
-            .forView()
-            .method(PaymentHistoryView::getByCustomerId)
-            .invoke(customerId);
+    @Post("/transactions/{transactionId}/refunds")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
+    public RefundResponse initiateRefund(String transactionId, RefundRequest request) {
+        // Validate request
+        if (request.amount == null) {
+            throw new IllegalArgumentException("Refund amount is required");
+        }
 
-        var transactions = entries.transactions().stream()
-            .map(this::toHistoryEntryResponse)
-            .collect(Collectors.toList());
+        // Verify transaction exists
+        PaymentTransaction transaction = componentClient
+            .forEventSourcedEntity(transactionId)
+            .method(PaymentTransactionEntity::getPayment)
+            .invoke();
 
-        return new PaymentHistoryResponse(transactions, transactions.size());
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction not found: " + transactionId);
+        }
+
+        Money refundAmount = request.amount.toMoney();
+
+        // Validate refund amount is greater than zero
+        if (refundAmount.amount().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Refund amount must be greater than zero");
+        }
+
+        // Generate refund workflow ID
+        String refundWorkflowId = "refund_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+
+        // Use default reason if none provided
+        String reason = request.reason != null ? request.reason : "Customer requested refund";
+
+        // Start refund workflow
+        var startCommand = new RefundWorkflow.StartRefund(
+            transactionId,
+            refundAmount,
+            reason
+        );
+
+        String refundId = componentClient
+            .forWorkflow(refundWorkflowId)
+            .method(RefundWorkflow::startRefund)
+            .invoke(startCommand);
+
+        // Return immediate response
+        return new RefundResponse(
+            refundId,
+            transactionId,
+            "PENDING",
+            toMoneyResponse(refundAmount),
+            reason
+        );
     }
 
-    @Get("/history/{customerId}/status/{status}")
-    public PaymentHistoryResponse getPaymentHistoryByStatus(String customerId, String status) {
-        // Query filtered history
-        var filter = new PaymentHistoryView.StatusFilter(customerId, status);
-        var entries = componentClient
-            .forView()
-            .method(PaymentHistoryView::getByCustomerIdAndStatus)
-            .invoke(filter);
+    @Get("/transactions/{transactionId}/refunds")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
+    public RefundListResponse getRefunds(String transactionId) {
+        // Get payment transaction from entity
+        PaymentTransaction transaction = componentClient
+            .forEventSourcedEntity(transactionId)
+            .method(PaymentTransactionEntity::getPayment)
+            .invoke();
 
-        var transactions = entries.transactions().stream()
-            .map(this::toHistoryEntryResponse)
-            .collect(Collectors.toList());
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction not found");
+        }
 
-        return new PaymentHistoryResponse(transactions, transactions.size());
+        List<RefundInfo> refunds = transaction.refunds().stream()
+            .map(this::toRefundInfo)
+            .toList();
+
+        return new RefundListResponse(refunds);
+    }
+
+    @Post("/history")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
+    public PaymentHistoryResponse getPaymentHistory(PaymentHistoryRequest request) {
+        if (request.customerId == null || request.customerId.isBlank()) {
+            throw new IllegalArgumentException("customerId is required");
+        }
+
+        PaymentHistoryView.PaymentHistoryEntries entries;
+
+        // Apply filters based on request parameters
+        if (request.status != null && !request.status.isBlank()) {
+            // Filter by status
+            // Validate the status
+            PaymentStatus.valueOf(request.status.toUpperCase()); // Throws exception if invalid
+            var filter = new PaymentHistoryView.StatusFilter(request.customerId, request.status.toUpperCase());
+            entries = componentClient
+                .forView()
+                .method(PaymentHistoryView::getByCustomerAndStatus)
+                .invoke(filter);
+        } else if (request.startDate != null && request.endDate != null) {
+            // Filter by date range
+            Instant start = Instant.parse(request.startDate);
+            Instant end = Instant.parse(request.endDate);
+            var filter = new PaymentHistoryView.DateRangeFilter(request.customerId, start, end);
+            entries = componentClient
+                .forView()
+                .method(PaymentHistoryView::getByCustomerAndDateRange)
+                .invoke(filter);
+        } else {
+            // No filters - get all transactions
+            entries = componentClient
+                .forView()
+                .method(PaymentHistoryView::getByCustomer)
+                .invoke(request.customerId);
+        }
+
+        List<PaymentHistoryItem> items = entries.transactions().stream()
+            .map(this::toPaymentHistoryItem)
+            .toList();
+
+        return new PaymentHistoryResponse(items);
     }
 
     @Get("/transactions/{transactionId}/receipt")
-    public String getReceipt(String transactionId) {
-        // Get transaction details
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
+    public akka.http.javadsl.model.HttpResponse getReceipt(String transactionId, String format) {
+        // Get transaction
         PaymentTransaction transaction = componentClient
             .forEventSourcedEntity(transactionId)
             .method(PaymentTransactionEntity::getPayment)
             .invoke();
 
-        // Generate HTML receipt
-        return receiptGenerator.generateReceiptHtml(transaction);
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction not found");
+        }
+
+        // Default to text if format not specified
+        if (format == null) {
+            format = "text";
+        }
+
+        if ("html".equalsIgnoreCase(format)) {
+            String htmlReceipt = receiptGenerator.generateHtmlReceipt(transaction);
+            return akka.javasdk.http.HttpResponses.ok(htmlReceipt)
+                .withHeaders(List.of(
+                    akka.http.javadsl.model.headers.ContentType.create(
+                        akka.http.javadsl.model.ContentTypes.TEXT_HTML_UTF8
+                    )
+                ));
+        } else {
+            String textReceipt = receiptGenerator.generateTextReceipt(transaction);
+            return akka.javasdk.http.HttpResponses.ok(textReceipt)
+                .withHeaders(List.of(
+                    akka.http.javadsl.model.headers.ContentType.create(
+                        akka.http.javadsl.model.ContentTypes.TEXT_PLAIN_UTF8
+                    )
+                ));
+        }
     }
-
-    @Get("/transactions/{transactionId}/receipt/text")
-    public String getReceiptText(String transactionId) {
-        // Get transaction details
-        PaymentTransaction transaction = componentClient
-            .forEventSourcedEntity(transactionId)
-            .method(PaymentTransactionEntity::getPayment)
-            .invoke();
-
-        // Generate text receipt
-        return receiptGenerator.generateReceiptText(transaction);
-    }
-
-    // Response records for history
-    public record PaymentHistoryResponse(
-        List<HistoryEntryResponse> transactions,
-        int total
-    ) {}
-
-    public record HistoryEntryResponse(
-        String transactionId,
-        String status,
-        MoneyResponse amount,
-        String merchantReference,
-        String createdAt,
-        String completedAt,
-        boolean hasRefunds
-    ) {}
 
     // Helper methods
     private PaymentResponse toPaymentResponse(PaymentTransaction transaction) {
@@ -233,16 +510,166 @@ public class PaymentEndpoint {
         );
     }
 
-    private HistoryEntryResponse toHistoryEntryResponse(PaymentHistoryView.PaymentHistoryEntry entry) {
-        var money = new Money(entry.amount(), Currency.valueOf(entry.currency()));
-        return new HistoryEntryResponse(
+    private RefundInfo toRefundInfo(Refund refund) {
+        return new RefundInfo(
+            refund.refundId(),
+            toMoneyResponse(refund.amount()),
+            refund.status().name(),
+            refund.reason(),
+            refund.createdAt().toString(),
+            refund.completedAt() != null ? refund.completedAt().toString() : null
+        );
+    }
+
+    private PaymentHistoryItem toPaymentHistoryItem(PaymentHistoryView.PaymentHistoryEntry entry) {
+        var money = new Money(
+            new java.math.BigDecimal(entry.amountValue()),
+            Currency.valueOf(entry.currency())
+        );
+        return new PaymentHistoryItem(
             entry.transactionId(),
-            entry.status().name(),
-            toMoneyResponse(money),
             entry.merchantReference(),
+            toMoneyResponse(money),
+            entry.status(),  // status is already a String
             entry.createdAt().toString(),
             entry.completedAt() != null ? entry.completedAt().toString() : null,
-            entry.hasRefunds()
+            entry.failureReason()
+        );
+    }
+
+    @Get("/exchange-rates")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
+    public ExchangeRatesResponse getExchangeRates() {
+        var rates = exchangeRateService.getExchangeRates();
+
+        // Convert rates to String format for JSON response
+        java.util.Map<String, String> ratesMap = new java.util.HashMap<>();
+        rates.rates().forEach((currency, rate) ->
+            ratesMap.put(currency.name(), rate.toPlainString())
+        );
+
+        return new ExchangeRatesResponse(
+            ratesMap,
+            rates.baseCurrency().name(),
+            rates.timestamp().toString()
+        );
+    }
+
+    @Post("/convert")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
+    public CurrencyConversionResponse convertCurrency(CurrencyConversionRequest request) {
+        // Validate request
+        if (request.amount == null || request.fromCurrency == null || request.toCurrency == null) {
+            throw new IllegalArgumentException("amount, fromCurrency, and toCurrency are required");
+        }
+
+        BigDecimal amount = new BigDecimal(request.amount);
+        Currency fromCurrency = Currency.valueOf(request.fromCurrency.toUpperCase());
+        Currency toCurrency = Currency.valueOf(request.toCurrency.toUpperCase());
+
+        var result = exchangeRateService.convertCurrency(amount, fromCurrency, toCurrency);
+
+        var originalMoney = new Money(result.originalAmount(), result.fromCurrency());
+        var convertedMoney = new Money(result.convertedAmount(), result.toCurrency());
+
+        return new CurrencyConversionResponse(
+            toMoneyResponse(originalMoney),
+            toMoneyResponse(convertedMoney),
+            result.exchangeRate().toPlainString(),
+            result.timestamp().toString()
+        );
+    }
+
+    // Audit Log API
+    public record AuditLogRequest(
+        String customerId,
+        String eventType,      // Optional: filter by event type
+        String startDate,      // Optional: ISO instant format
+        String endDate,        // Optional: ISO instant format
+        Integer limit          // Optional: limit results
+    ) {}
+
+    public record AuditEventResponse(
+        String eventType,
+        String customerId,
+        String transactionId,
+        String description,
+        String timestamp
+    ) {}
+
+    public record AuditLogResponse(
+        List<AuditEventResponse> events,
+        int totalCount
+    ) {}
+
+    @Post("/audit-log")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
+    public AuditLogResponse queryAuditLog(AuditLogRequest request) {
+        if (request.customerId == null || request.customerId.isBlank()) {
+            throw new IllegalArgumentException("Customer ID is required");
+        }
+
+        AuditLogEntity.EventList eventList;
+
+        // Query by type if specified
+        if (request.eventType != null && !request.eventType.isBlank()) {
+            eventList = componentClient
+                .forEventSourcedEntity(request.customerId)
+                .method(AuditLogEntity::getEventsByType)
+                .invoke(request.eventType);
+        }
+        // Query by time range if specified
+        else if (request.startDate != null && request.endDate != null) {
+            var query = new AuditLogEntity.TimeRangeQuery(
+                java.time.Instant.parse(request.startDate),
+                java.time.Instant.parse(request.endDate)
+            );
+            eventList = componentClient
+                .forEventSourcedEntity(request.customerId)
+                .method(AuditLogEntity::getEventsInRange)
+                .invoke(query);
+        }
+        // Query recent if limit specified
+        else if (request.limit != null && request.limit > 0) {
+            eventList = componentClient
+                .forEventSourcedEntity(request.customerId)
+                .method(AuditLogEntity::getRecentEvents)
+                .invoke(request.limit);
+        }
+        // Get all events
+        else {
+            eventList = componentClient
+                .forEventSourcedEntity(request.customerId)
+                .method(AuditLogEntity::getAllEvents)
+                .invoke();
+        }
+
+        List<AuditEvent> events = eventList.events();
+
+        List<AuditEventResponse> responses = events.stream()
+            .map(this::toAuditEventResponse)
+            .toList();
+
+        return new AuditLogResponse(responses, responses.size());
+    }
+
+    private AuditEventResponse toAuditEventResponse(AuditEvent event) {
+        String transactionId = switch (event) {
+            case AuditEvent.PaymentCreated e -> e.transactionId();
+            case AuditEvent.PaymentCompleted e -> e.transactionId();
+            case AuditEvent.PaymentFailed e -> e.transactionId();
+            case AuditEvent.RefundInitiated e -> e.transactionId();
+            case AuditEvent.RefundCompleted e -> e.transactionId();
+            case AuditEvent.FraudAlertTriggered e -> e.transactionId();
+            default -> "";
+        };
+
+        return new AuditEventResponse(
+            event.eventType(),
+            event.customerId(),
+            transactionId,
+            event.description(),
+            event.timestamp().toString()
         );
     }
 }
