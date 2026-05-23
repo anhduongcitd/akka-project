@@ -40,7 +40,8 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
         String paymentMethodId,        // For saved payment method (mutually exclusive with cardToken)
         String merchantReference,
         CustomerRequest customer,
-        boolean savePaymentMethod      // Only applies when using cardToken
+        boolean savePaymentMethod,     // Only applies when using cardToken
+        String idempotencyKey          // Optional: prevent duplicate payments
     ) {}
 
     public record MoneyRequest(String value, String currency) {
@@ -156,8 +157,36 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             throw new IllegalArgumentException("Customer information is required");
         }
 
-        // Generate transaction ID
-        String transactionId = "txn_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        // Check idempotency key if provided
+        String transactionId;
+        if (request.idempotencyKey != null && !request.idempotencyKey.isBlank()) {
+            // Check if this idempotency key already has a transaction
+            String existingTxnId = componentClient
+                .forKeyValueEntity(request.idempotencyKey)
+                .method(IdempotencyEntity::getTransactionId)
+                .invoke();
+
+            if (existingTxnId != null && !existingTxnId.isEmpty()) {
+                // Return existing transaction (idempotent response)
+                PaymentTransaction transaction = componentClient
+                    .forEventSourcedEntity(existingTxnId)
+                    .method(PaymentTransactionEntity::getPayment)
+                    .invoke();
+                return toPaymentResponse(transaction);
+            }
+
+            // Generate new transaction ID
+            transactionId = "txn_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+
+            // Register idempotency key with new transaction ID
+            componentClient
+                .forKeyValueEntity(request.idempotencyKey)
+                .method(IdempotencyEntity::register)
+                .invoke(transactionId);
+        } else {
+            // No idempotency key - generate transaction ID normally
+            transactionId = "txn_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+        }
 
         // Convert request to domain objects
         Money amount = request.amount.toMoney();

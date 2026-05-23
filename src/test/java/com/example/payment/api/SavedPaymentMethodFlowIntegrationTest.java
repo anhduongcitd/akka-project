@@ -77,7 +77,8 @@ public class SavedPaymentMethodFlowIntegrationTest extends TestKitSupport {
             paymentMethodId,  // Use saved payment method
             "ORDER-SAVED-001",
             new PaymentEndpoint.CustomerRequest(customerId, "saved@test.com", "Saved Test"),
-            false  // Not saving (already saved)
+            false,  // Not saving (already saved)
+            null
         );
 
         var paymentResponse = httpClient
@@ -108,7 +109,8 @@ public class SavedPaymentMethodFlowIntegrationTest extends TestKitSupport {
             "pm_nonexistent",  // Non-existent payment method
             "ORDER-INVALID-001",
             new PaymentEndpoint.CustomerRequest("cust_invalid", "invalid@test.com", "Invalid Test"),
-            false
+            false,
+            null
         );
 
         var response = httpClient
@@ -131,7 +133,8 @@ public class SavedPaymentMethodFlowIntegrationTest extends TestKitSupport {
             "pm_saved",  // Payment method ID
             "ORDER-BOTH-001",
             new PaymentEndpoint.CustomerRequest("cust_both", "both@test.com", "Both Test"),
-            false
+            false,
+            null
         );
 
         var response = httpClient
@@ -151,7 +154,8 @@ public class SavedPaymentMethodFlowIntegrationTest extends TestKitSupport {
             null,  // No payment method ID
             "ORDER-NEITHER-001",
             new PaymentEndpoint.CustomerRequest("cust_neither", "neither@test.com", "Neither Test"),
-            false
+            false,
+            null
         );
 
         var response = httpClient
@@ -215,7 +219,8 @@ public class SavedPaymentMethodFlowIntegrationTest extends TestKitSupport {
                 paymentMethodId,
                 "ORDER-REUSE-" + String.format("%03d", i),
                 new PaymentEndpoint.CustomerRequest(customerId, "reuse@test.com", "Reuse Test"),
-                false
+                false,
+                null
             );
 
             var paymentResponse = httpClient
@@ -258,7 +263,8 @@ public class SavedPaymentMethodFlowIntegrationTest extends TestKitSupport {
             paymentMethodId,
             "ORDER-SWITCH-SAVED",
             new PaymentEndpoint.CustomerRequest(customerId, "switch@test.com", "Switch Test"),
-            false
+            false,
+            null
         );
 
         var savedPaymentResponse = httpClient
@@ -276,7 +282,8 @@ public class SavedPaymentMethodFlowIntegrationTest extends TestKitSupport {
             null,
             "ORDER-SWITCH-NEW",
             new PaymentEndpoint.CustomerRequest(customerId, "switch@test.com", "Switch Test"),
-            false  // Don't save this one
+            false,  // Don't save this one
+            null
         );
 
         var newCardPaymentResponse = httpClient
@@ -367,7 +374,8 @@ public class SavedPaymentMethodFlowIntegrationTest extends TestKitSupport {
             paymentMethodId,  // Deleted payment method
             "ORDER-DELETED-001",
             new PaymentEndpoint.CustomerRequest(customerId, "deleted@test.com", "Deleted Test"),
-            false
+            false,
+            null
         );
 
         var response = httpClient

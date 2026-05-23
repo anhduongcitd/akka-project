@@ -30,7 +30,8 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
             null,  // paymentMethodId
             "ORDER-001",
             customerRequest,
-            false
+            false,
+            null
         );
 
         assertThat(request.amount().value()).isEqualTo("100.00");
@@ -46,7 +47,8 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
             null,  // paymentMethodId
             "ORDER-REFUND-001",
             new PaymentEndpoint.CustomerRequest("cust_refund", "refund@test.com", "Refund Customer"),
-            false
+            false,
+            null
         );
 
         var createResponse = httpClient
@@ -98,7 +100,8 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
             null,  // paymentMethodId
             "ORDER-REFUND-LIST-001",
             new PaymentEndpoint.CustomerRequest("cust_list", "list@test.com", "List Customer"),
-            false
+            false,
+            null
         );
 
         var createResponse = httpClient
@@ -170,7 +173,8 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
             null,  // paymentMethodId
             "ORDER-EXCEED-001",
             new PaymentEndpoint.CustomerRequest("cust_exceed", "exceed@test.com", "Exceed Customer"),
-            false
+            false,
+            null
         );
 
         var createResponse = httpClient
@@ -236,7 +240,8 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
             null,  // paymentMethodId
             "ORDER-PARTIAL-001",
             new PaymentEndpoint.CustomerRequest("cust_partial", "partial@test.com", "Partial Customer"),
-            false
+            false,
+            null
         );
 
         var createResponse = httpClient

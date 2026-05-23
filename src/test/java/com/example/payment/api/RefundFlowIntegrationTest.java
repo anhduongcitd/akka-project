@@ -23,7 +23,8 @@ public class RefundFlowIntegrationTest extends TestKitSupport {
             null,
             "ORDER-FULL-FLOW-001",
             new PaymentEndpoint.CustomerRequest("cust_flow_1", "flow@test.com", "Flow User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
@@ -97,7 +98,8 @@ public class RefundFlowIntegrationTest extends TestKitSupport {
             null,
             "ORDER-MULTI-REFUND-001",
             new PaymentEndpoint.CustomerRequest("cust_flow_2", "multirefund@test.com", "Multi Refund User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
@@ -194,7 +196,8 @@ public class RefundFlowIntegrationTest extends TestKitSupport {
             null,
             "ORDER-EUR-REFUND-001",
             new PaymentEndpoint.CustomerRequest("cust_flow_3", "eur@test.com", "EUR User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
@@ -243,7 +246,8 @@ public class RefundFlowIntegrationTest extends TestKitSupport {
             null,
             "ORDER-REASON-TEST",
             new PaymentEndpoint.CustomerRequest("cust_flow_4", "reason@test.com", "Reason User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
@@ -306,7 +310,8 @@ public class RefundFlowIntegrationTest extends TestKitSupport {
             null,
             "ORDER-IMMEDIATE-REFUND",
             new PaymentEndpoint.CustomerRequest("cust_flow_5", "immediate@test.com", "Immediate User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient

@@ -23,7 +23,8 @@ public class RefundEndpointIntegrationTest extends TestKitSupport {
             null,
             "ORDER-REFUND-001",
             new PaymentEndpoint.CustomerRequest("cust_refund_1", "refund@test.com", "Refund User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
@@ -75,7 +76,8 @@ public class RefundEndpointIntegrationTest extends TestKitSupport {
             null,
             "ORDER-PARTIAL-001",
             new PaymentEndpoint.CustomerRequest("cust_refund_2", "partial@test.com", "Partial User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
@@ -124,7 +126,8 @@ public class RefundEndpointIntegrationTest extends TestKitSupport {
             null,
             "ORDER-MULTI-REFUND",
             new PaymentEndpoint.CustomerRequest("cust_refund_3", "multi@test.com", "Multi User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
@@ -206,7 +209,8 @@ public class RefundEndpointIntegrationTest extends TestKitSupport {
             null,
             "ORDER-NO-REFUND",
             new PaymentEndpoint.CustomerRequest("cust_refund_4", "norefund@test.com", "No Refund User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
@@ -248,7 +252,8 @@ public class RefundEndpointIntegrationTest extends TestKitSupport {
             null,
             "ORDER-DEFAULT-REASON",
             new PaymentEndpoint.CustomerRequest("cust_refund_5", "default@test.com", "Default User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
@@ -297,7 +302,8 @@ public class RefundEndpointIntegrationTest extends TestKitSupport {
             null,
             "ORDER-INVALID-REFUND",
             new PaymentEndpoint.CustomerRequest("cust_refund_6", "invalid@test.com", "Invalid User"),
-            false
+            false,
+            null
         );
 
         var paymentResponse = httpClient
