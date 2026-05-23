@@ -27,6 +27,7 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
         var request = new PaymentEndpoint.CreatePaymentRequest(
             moneyRequest,
             "tok_visa",
+            null,  // paymentMethodId
             "ORDER-001",
             customerRequest,
             false
@@ -42,6 +43,7 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
         var createRequest = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("100.00", "USD"),
             "tok_visa",
+            null,  // paymentMethodId
             "ORDER-REFUND-001",
             new PaymentEndpoint.CustomerRequest("cust_refund", "refund@test.com", "Refund Customer"),
             false
@@ -93,6 +95,7 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
         var createRequest = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("200.00", "USD"),
             "tok_visa",
+            null,  // paymentMethodId
             "ORDER-REFUND-LIST-001",
             new PaymentEndpoint.CustomerRequest("cust_list", "list@test.com", "List Customer"),
             false
@@ -164,6 +167,7 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
         var createRequest = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("100.00", "USD"),
             "tok_visa",
+            null,  // paymentMethodId
             "ORDER-EXCEED-001",
             new PaymentEndpoint.CustomerRequest("cust_exceed", "exceed@test.com", "Exceed Customer"),
             false
@@ -229,6 +233,7 @@ public class PaymentEndpointIntegrationTest extends TestKitSupport {
         var createRequest = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("500.00", "USD"),
             "tok_visa",
+            null,  // paymentMethodId
             "ORDER-PARTIAL-001",
             new PaymentEndpoint.CustomerRequest("cust_partial", "partial@test.com", "Partial Customer"),
             false

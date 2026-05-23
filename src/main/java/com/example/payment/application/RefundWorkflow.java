@@ -167,7 +167,7 @@ public class RefundWorkflow extends Workflow<RefundWorkflow.State> {
 
         // Calculate total already refunded
         Money totalRefunded = transaction.refunds().stream()
-            .filter(r -> r.status() == RefundStatus.COMPLETED)
+            .filter(r -> r.status() == RefundStatus.SUCCEEDED)
             .map(r -> r.amount())
             .reduce(Money::add)
             .orElse(new Money(java.math.BigDecimal.ZERO, currentState().refundAmount.currency()));
@@ -185,7 +185,7 @@ public class RefundWorkflow extends Workflow<RefundWorkflow.State> {
         // Process refund with Stripe
         try {
             String gatewayRefundId = stripeGateway.refund(
-                transaction.stripePaymentIntentId(),
+                transaction.gatewayTransactionId(),
                 currentState().refundAmount
             );
 

@@ -27,7 +27,9 @@ public class PaymentProcessingWorkflowTest extends TestKitSupport {
             customer,
             amount,
             "ORDER-001",
-            "tok_visa"
+            "tok_visa",
+            false,  // Not using saved method
+            false   // Not saving method
         );
 
         // Note: This test demonstrates the pattern.

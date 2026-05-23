@@ -22,23 +22,35 @@ public class EmailService {
 
     private final AmazonSimpleEmailService sesClient;
     private final String fromEmail;
+    private final boolean testMode;
 
     private static final DateTimeFormatter DATE_FORMATTER =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")
             .withZone(ZoneId.systemDefault());
 
     public EmailService(Config config) {
-        String accessKey = config.getString("payment.aws.access-key");
-        String secretKey = config.getString("payment.aws.secret-key");
-        String region = config.getString("payment.aws.region");
-        this.fromEmail = config.getString("payment.aws.ses.from-email");
+        this.fromEmail = config.getString("payment.email.from");
 
-        BasicAWSCredentials awsCreds = new BasicAWSCredentials(accessKey, secretKey);
+        // Check if in test mode (no real AWS credentials)
+        boolean hasAwsConfig = config.hasPath("payment.aws.access-key") &&
+                               config.hasPath("payment.aws.secret-key") &&
+                               !config.getString("payment.aws.access-key").isEmpty();
+        this.testMode = !hasAwsConfig;
 
-        this.sesClient = AmazonSimpleEmailServiceClientBuilder.standard()
-            .withCredentials(new AWSStaticCredentialsProvider(awsCreds))
-            .withRegion(region)
-            .build();
+        if (!testMode) {
+            String accessKey = config.getString("payment.aws.access-key");
+            String secretKey = config.getString("payment.aws.secret-key");
+            String region = config.getString("payment.aws.region");
+
+            BasicAWSCredentials awsCreds = new BasicAWSCredentials(accessKey, secretKey);
+
+            this.sesClient = AmazonSimpleEmailServiceClientBuilder.standard()
+                .withCredentials(new AWSStaticCredentialsProvider(awsCreds))
+                .withRegion(region)
+                .build();
+        } else {
+            this.sesClient = null; // No SES client in test mode
+        }
     }
 
     /**
@@ -52,6 +64,11 @@ public class EmailService {
         String merchantReference,
         Instant timestamp
     ) {
+        // In test mode, don't send real emails
+        if (testMode) {
+            return CompletableFuture.completedFuture(null);
+        }
+
         return CompletableFuture.runAsync(() -> {
             String subject = "Payment Confirmation - " + transactionId;
             String body = buildPaymentConfirmationBody(
@@ -76,6 +93,11 @@ public class EmailService {
         Money refundAmount,
         Instant timestamp
     ) {
+        // In test mode, don't send real emails
+        if (testMode) {
+            return CompletableFuture.completedFuture(null);
+        }
+
         return CompletableFuture.runAsync(() -> {
             String subject = "Refund Processed - " + transactionId;
             String body = buildRefundNotificationBody(

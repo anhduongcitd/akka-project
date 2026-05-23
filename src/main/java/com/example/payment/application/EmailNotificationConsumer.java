@@ -36,7 +36,7 @@ public class EmailNotificationConsumer extends Consumer {
                 yield effects().done();
             }
 
-            case PaymentTransactionEvent.PaymentRefunded refunded -> {
+            case PaymentTransactionEvent.RefundCompleted refundCompleted -> {
                 String transactionId = messageContext().eventSubject().orElse("unknown");
 
                 // Send refund notification email

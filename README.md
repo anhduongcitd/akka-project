@@ -57,6 +57,8 @@ Service starts on `http://localhost:9000`
 
 ### 4. Test the API
 
+#### Option A: Payment with New Card
+
 Create a test payment using Stripe's test card `4242424242424242`:
 
 ```bash
@@ -75,6 +77,28 @@ curl -X POST http://localhost:9000/payment/transactions \
       "name": "John Doe"
     },
     "savePaymentMethod": true
+  }'
+```
+
+#### Option B: Payment with Saved Payment Method
+
+Use a previously saved payment method for faster checkout:
+
+```bash
+curl -X POST http://localhost:9000/payment/transactions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": {
+      "value": "50.00",
+      "currency": "USD"
+    },
+    "paymentMethodId": "pm_abc123",
+    "merchantReference": "TEST-ORDER-002",
+    "customer": {
+      "customerId": "cust_123",
+      "email": "customer@example.com",
+      "name": "John Doe"
+    }
   }'
 ```
 
@@ -100,16 +124,167 @@ Response:
 ### Payments
 - `POST /payment/transactions` - Create new payment
 - `GET /payment/transactions/{id}` - Get payment status
-- `GET /payment/history` - View payment history
+- `POST /payment/history` - View payment history with filters
+- `GET /payment/transactions/{id}/receipt` - Download receipt
 
 ### Payment Methods
 - `POST /payment/methods` - Save payment method
-- `GET /payment/methods` - List saved methods
+- `GET /payment/methods?customerId={id}` - List customer's saved methods
 - `DELETE /payment/methods/{id}` - Delete payment method
+- `PUT /payment/methods/{id}/default` - Set payment method as default
 
 ### Refunds
 - `POST /payment/transactions/{id}/refunds` - Process refund
 - `GET /payment/transactions/{id}/refunds` - List refunds
+
+### Example Usage
+
+#### Save Payment Method
+
+Save a payment method for faster future checkouts:
+
+```bash
+curl -X POST http://localhost:9000/payment/methods \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customerId": "cust_123",
+    "token": "tok_visa",
+    "brand": "VISA",
+    "last4Digits": "4242",
+    "expirationDate": "2025-12",
+    "isDefault": true
+  }'
+```
+
+Response:
+```json
+{
+  "paymentMethodId": "pm_abc123...",
+  "customerId": "cust_123",
+  "brand": "VISA",
+  "last4Digits": "4242",
+  "expirationDate": "2025-12",
+  "maskedNumber": "**** 4242",
+  "isDefault": true,
+  "isExpired": false,
+  "isExpiringSoon": false,
+  "createdAt": "2024-01-15T10:00:00Z"
+}
+```
+
+#### List Saved Payment Methods
+
+Get all saved payment methods for a customer:
+
+```bash
+curl -X GET "http://localhost:9000/payment/methods?customerId=cust_123"
+```
+
+Response:
+```json
+{
+  "methods": [
+    {
+      "paymentMethodId": "pm_abc123...",
+      "customerId": "cust_123",
+      "brand": "VISA",
+      "last4Digits": "4242",
+      "expirationDate": "2025-12",
+      "maskedNumber": "**** 4242",
+      "isDefault": true,
+      "isExpired": false,
+      "isExpiringSoon": false,
+      "createdAt": "2024-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+#### Delete Payment Method
+
+Remove a saved payment method:
+
+```bash
+curl -X DELETE http://localhost:9000/payment/methods/pm_abc123
+```
+
+#### Set Default Payment Method
+
+Mark a payment method as the default:
+
+```bash
+curl -X PUT http://localhost:9000/payment/methods/pm_abc123/default
+```
+
+#### View Payment History
+
+Get all transactions for a customer:
+
+```bash
+curl -X POST http://localhost:9000/payment/history \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customerId": "cust_123"
+  }'
+```
+
+Filter by status:
+
+```bash
+curl -X POST http://localhost:9000/payment/history \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customerId": "cust_123",
+    "status": "SUCCEEDED"
+  }'
+```
+
+Filter by date range:
+
+```bash
+curl -X POST http://localhost:9000/payment/history \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customerId": "cust_123",
+    "startDate": "2024-01-01T00:00:00Z",
+    "endDate": "2024-12-31T23:59:59Z"
+  }'
+```
+
+Response:
+```json
+{
+  "transactions": [
+    {
+      "transactionId": "txn_abc123",
+      "merchantReference": "ORDER-001",
+      "amount": {
+        "value": "50.00",
+        "currency": "USD",
+        "formatted": "$50.00"
+      },
+      "status": "SUCCEEDED",
+      "createdAt": "2024-01-15T10:30:00Z",
+      "completedAt": "2024-01-15T10:30:05Z",
+      "failureReason": null
+    }
+  ]
+}
+```
+
+#### Download Receipt
+
+Get text receipt:
+
+```bash
+curl -X GET "http://localhost:9000/payment/transactions/txn_abc123/receipt"
+```
+
+Get HTML receipt:
+
+```bash
+curl -X GET "http://localhost:9000/payment/transactions/txn_abc123/receipt?format=html"
+```
 
 #### Initiate Refund
 
