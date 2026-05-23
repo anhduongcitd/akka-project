@@ -131,12 +131,13 @@ public class PaymentEdgeCasesIntegrationTest extends TestKitSupport {
     public void shouldHandleSavePaymentMethodWithVeryLongIdempotencyKey() {
         // Test idempotency key with 240 characters (under 245 limit)
         String longKey = "idem_" + "X".repeat(235);
+        String uniqueMerchantRef = "ORDER-LONG-IDEM-" + System.currentTimeMillis();
 
         var request = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("50.00", "USD"),
             "tok_visa",
             null,
-            "ORDER-LONG-IDEM",
+            uniqueMerchantRef,
             new PaymentEndpoint.CustomerRequest("cust_long_idem", "longidem@test.com", "Long Idem User"),
             false,
             longKey

@@ -19,7 +19,7 @@ import java.util.UUID;
  * Aligned with FR-010: Allow users to save payment methods for faster checkout.
  */
 @HttpEndpoint("/payment/methods")
-@Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
+@Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
 public class PaymentMethodEndpoint extends AbstractHttpEndpoint {
 
     private final ComponentClient componentClient;

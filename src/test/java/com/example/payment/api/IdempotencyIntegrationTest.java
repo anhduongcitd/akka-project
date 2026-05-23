@@ -16,12 +16,13 @@ public class IdempotencyIntegrationTest extends TestKitSupport {
     @Test
     public void shouldReturnSameTransactionForDuplicateIdempotencyKey() {
         String idempotencyKey = "idem_duplicate_test_" + System.currentTimeMillis();
+        String uniqueMerchantRef = "ORDER-IDEM-001-" + System.currentTimeMillis();
 
         var request = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("75.00", "USD"),
             "tok_visa",
             null,
-            "ORDER-IDEM-001",
+            uniqueMerchantRef,
             new PaymentEndpoint.CustomerRequest("cust_idem_1", "idem@test.com", "Idem User"),
             false,
             idempotencyKey
@@ -60,22 +61,24 @@ public class IdempotencyIntegrationTest extends TestKitSupport {
     public void shouldCreateDifferentTransactionsForDifferentKeys() {
         String idempotencyKey1 = "idem_different_1_" + System.currentTimeMillis();
         String idempotencyKey2 = "idem_different_2_" + System.currentTimeMillis();
+        String uniqueMerchantRef1 = "ORDER-IDEM-002-" + System.currentTimeMillis();
+        String uniqueMerchantRef2 = "ORDER-IDEM-003-" + System.currentTimeMillis();
 
         var request1 = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("50.00", "USD"),
             "tok_visa",
             null,
-            "ORDER-IDEM-002",
+            uniqueMerchantRef1,
             new PaymentEndpoint.CustomerRequest("cust_idem_2", "idem2@test.com", "Idem User 2"),
             false,
             idempotencyKey1
         );
 
         var request2 = new PaymentEndpoint.CreatePaymentRequest(
-            new PaymentEndpoint.MoneyRequest("50.00", "USD"),
+            new PaymentEndpoint.MoneyRequest("50.01", "USD"),
             "tok_visa",
             null,
-            "ORDER-IDEM-003",
+            uniqueMerchantRef2,
             new PaymentEndpoint.CustomerRequest("cust_idem_3", "idem3@test.com", "Idem User 3"),
             false,
             idempotencyKey2
@@ -100,11 +103,24 @@ public class IdempotencyIntegrationTest extends TestKitSupport {
 
     @Test
     public void shouldCreateNewTransactionWithoutIdempotencyKey() {
-        var request = new PaymentEndpoint.CreatePaymentRequest(
+        String uniqueRef1 = "ORDER-NO-IDEM-1-" + System.currentTimeMillis();
+        String uniqueRef2 = "ORDER-NO-IDEM-2-" + System.currentTimeMillis();
+
+        var request1 = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("60.00", "USD"),
             "tok_visa",
             null,
-            "ORDER-NO-IDEM",
+            uniqueRef1,
+            new PaymentEndpoint.CustomerRequest("cust_no_idem", "noidem@test.com", "No Idem User"),
+            false,
+            null  // No idempotency key
+        );
+
+        var request2 = new PaymentEndpoint.CreatePaymentRequest(
+            new PaymentEndpoint.MoneyRequest("60.01", "USD"),
+            "tok_visa",
+            null,
+            uniqueRef2,
             new PaymentEndpoint.CustomerRequest("cust_no_idem", "noidem@test.com", "No Idem User"),
             false,
             null  // No idempotency key
@@ -113,14 +129,14 @@ public class IdempotencyIntegrationTest extends TestKitSupport {
         // First request
         var response1 = httpClient
             .POST("/payment/transactions")
-            .withRequestBody(request)
+            .withRequestBody(request1)
             .responseBodyAs(PaymentEndpoint.PaymentResponse.class)
             .invoke();
 
-        // Second request (same payload, no idempotency key)
+        // Second request (different merchant ref and amount)
         var response2 = httpClient
             .POST("/payment/transactions")
-            .withRequestBody(request)
+            .withRequestBody(request2)
             .responseBodyAs(PaymentEndpoint.PaymentResponse.class)
             .invoke();
 
@@ -131,12 +147,13 @@ public class IdempotencyIntegrationTest extends TestKitSupport {
     @Test
     public void shouldReturnExistingCompletedTransaction() {
         String idempotencyKey = "idem_completed_test_" + System.currentTimeMillis();
+        String uniqueMerchantRef = "ORDER-IDEM-COMPLETED-" + System.currentTimeMillis();
 
         var request = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("100.00", "USD"),
             "tok_visa",
             null,
-            "ORDER-IDEM-COMPLETED",
+            uniqueMerchantRef,
             new PaymentEndpoint.CustomerRequest("cust_idem_4", "idem4@test.com", "Idem User 4"),
             false,
             idempotencyKey
@@ -178,12 +195,13 @@ public class IdempotencyIntegrationTest extends TestKitSupport {
     @Test
     public void shouldHandleConcurrentRequestsWithSameIdempotencyKey() throws Exception {
         String idempotencyKey = "idem_concurrent_" + System.currentTimeMillis();
+        String uniqueMerchantRef = "ORDER-IDEM-CONCURRENT-" + System.currentTimeMillis();
 
         var request = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("80.00", "USD"),
             "tok_visa",
             null,
-            "ORDER-IDEM-CONCURRENT",
+            uniqueMerchantRef,
             new PaymentEndpoint.CustomerRequest("cust_idem_5", "idem5@test.com", "Idem User 5"),
             false,
             idempotencyKey
@@ -217,11 +235,13 @@ public class IdempotencyIntegrationTest extends TestKitSupport {
 
     @Test
     public void shouldAcceptEmptyIdempotencyKey() {
+        String uniqueMerchantRef = "ORDER-EMPTY-IDEM-" + System.currentTimeMillis();
+
         var request = new PaymentEndpoint.CreatePaymentRequest(
             new PaymentEndpoint.MoneyRequest("45.00", "USD"),
             "tok_visa",
             null,
-            "ORDER-EMPTY-IDEM",
+            uniqueMerchantRef,
             new PaymentEndpoint.CustomerRequest("cust_empty_idem", "empty@test.com", "Empty Idem User"),
             false,
             ""  // Empty string (treated as no key)

@@ -20,7 +20,6 @@ import java.util.UUID;
  * Aligned with FR-001 to FR-021: All payment functional requirements.
  */
 @HttpEndpoint("/payment")
-@Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
 public class PaymentEndpoint extends AbstractHttpEndpoint {
 
     private final ComponentClient componentClient;
@@ -152,6 +151,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
 
     // API Methods
     @Post("/transactions")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
     public PaymentResponse createPayment(CreatePaymentRequest request) {
         // Rate limiting - check IP limit
         String clientIp = requestContext().requestHeader("X-Forwarded-For")
@@ -210,7 +210,27 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             throw new IllegalArgumentException("Payment limit exceeded for customer. Please try again later.");
         }
 
-        // Fraud detection - check for suspicious patterns
+        // Check idempotency key FIRST (before fraud detection)
+        // Legitimate retries with idempotency keys should not be blocked
+        String transactionId;
+        if (request.idempotencyKey != null && !request.idempotencyKey.isBlank()) {
+            // Check if this idempotency key already has a transaction
+            String existingTxnId = componentClient
+                .forKeyValueEntity(request.idempotencyKey)
+                .method(IdempotencyEntity::getTransactionId)
+                .invoke();
+
+            if (existingTxnId != null && !existingTxnId.isEmpty()) {
+                // Return existing transaction (idempotent response - skip fraud check)
+                PaymentTransaction transaction = componentClient
+                    .forEventSourcedEntity(existingTxnId)
+                    .method(PaymentTransactionEntity::getPayment)
+                    .invoke();
+                return toPaymentResponse(transaction);
+            }
+        }
+
+        // Fraud detection - check for suspicious patterns (only for new requests)
         Money amount = request.amount.toMoney();
         var fraudCheck = new FraudCheckEntity.CheckFraudRequest(
             request.merchantReference,
@@ -232,23 +252,8 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             throw new IllegalArgumentException("Payment blocked: " + fraudResult.reason());
         }
 
-        // Check idempotency key if provided
-        String transactionId;
+        // Generate transaction ID
         if (request.idempotencyKey != null && !request.idempotencyKey.isBlank()) {
-            // Check if this idempotency key already has a transaction
-            String existingTxnId = componentClient
-                .forKeyValueEntity(request.idempotencyKey)
-                .method(IdempotencyEntity::getTransactionId)
-                .invoke();
-
-            if (existingTxnId != null && !existingTxnId.isEmpty()) {
-                // Return existing transaction (idempotent response)
-                PaymentTransaction transaction = componentClient
-                    .forEventSourcedEntity(existingTxnId)
-                    .method(PaymentTransactionEntity::getPayment)
-                    .invoke();
-                return toPaymentResponse(transaction);
-            }
 
             // Generate new transaction ID
             transactionId = "txn_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
@@ -290,6 +295,22 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             .method(PaymentProcessingWorkflow::startPayment)
             .invoke(startCommand);
 
+        // Log payment creation to audit trail
+        var auditEvent = new com.example.payment.domain.AuditEvent.PaymentCreated(
+            customer.customerId(),
+            transactionId,
+            amount.amount().toString(),
+            amount.currency().name(),
+            request.merchantReference,
+            java.time.Instant.now(),
+            "Payment transaction initiated"
+        );
+
+        componentClient
+            .forEventSourcedEntity(customer.customerId())
+            .method(com.example.payment.application.AuditLogEntity::logEvent)
+            .invoke(auditEvent);
+
         // Return immediate response
         return new PaymentResponse(
             transactionId,
@@ -303,6 +324,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     }
 
     @Get("/transactions/{transactionId}")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
     public PaymentResponse getTransaction(String transactionId) {
         // Get payment transaction from entity
         PaymentTransaction transaction = componentClient
@@ -314,6 +336,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     }
 
     @Post("/transactions/{transactionId}/refunds")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
     public RefundResponse initiateRefund(String transactionId, RefundRequest request) {
         // Validate request
         if (request.amount == null) {
@@ -366,6 +389,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     }
 
     @Get("/transactions/{transactionId}/refunds")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
     public RefundListResponse getRefunds(String transactionId) {
         // Get payment transaction from entity
         PaymentTransaction transaction = componentClient
@@ -385,6 +409,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     }
 
     @Post("/history")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
     public PaymentHistoryResponse getPaymentHistory(PaymentHistoryRequest request) {
         if (request.customerId == null || request.customerId.isBlank()) {
             throw new IllegalArgumentException("customerId is required");
@@ -427,6 +452,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     }
 
     @Get("/transactions/{transactionId}/receipt")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
     public akka.http.javadsl.model.HttpResponse getReceipt(String transactionId, String format) {
         // Get transaction
         PaymentTransaction transaction = componentClient
@@ -511,6 +537,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     }
 
     @Get("/exchange-rates")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
     public ExchangeRatesResponse getExchangeRates() {
         var rates = exchangeRateService.getExchangeRates();
 
@@ -528,6 +555,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     }
 
     @Post("/convert")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.INTERNET))
     public CurrencyConversionResponse convertCurrency(CurrencyConversionRequest request) {
         // Validate request
         if (request.amount == null || request.fromCurrency == null || request.toCurrency == null) {
@@ -548,6 +576,99 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             toMoneyResponse(convertedMoney),
             result.exchangeRate().toPlainString(),
             result.timestamp().toString()
+        );
+    }
+
+    // Audit Log API
+    public record AuditLogRequest(
+        String customerId,
+        String eventType,      // Optional: filter by event type
+        String startDate,      // Optional: ISO instant format
+        String endDate,        // Optional: ISO instant format
+        Integer limit          // Optional: limit results
+    ) {}
+
+    public record AuditEventResponse(
+        String eventType,
+        String customerId,
+        String transactionId,
+        String description,
+        String timestamp
+    ) {}
+
+    public record AuditLogResponse(
+        List<AuditEventResponse> events,
+        int totalCount
+    ) {}
+
+    @Post("/audit-log")
+    @Acl(allow = @Acl.Matcher(principal = Acl.Principal.ALL))
+    public AuditLogResponse queryAuditLog(AuditLogRequest request) {
+        if (request.customerId == null || request.customerId.isBlank()) {
+            throw new IllegalArgumentException("Customer ID is required");
+        }
+
+        AuditLogEntity.EventList eventList;
+
+        // Query by type if specified
+        if (request.eventType != null && !request.eventType.isBlank()) {
+            eventList = componentClient
+                .forEventSourcedEntity(request.customerId)
+                .method(AuditLogEntity::getEventsByType)
+                .invoke(request.eventType);
+        }
+        // Query by time range if specified
+        else if (request.startDate != null && request.endDate != null) {
+            var query = new AuditLogEntity.TimeRangeQuery(
+                java.time.Instant.parse(request.startDate),
+                java.time.Instant.parse(request.endDate)
+            );
+            eventList = componentClient
+                .forEventSourcedEntity(request.customerId)
+                .method(AuditLogEntity::getEventsInRange)
+                .invoke(query);
+        }
+        // Query recent if limit specified
+        else if (request.limit != null && request.limit > 0) {
+            eventList = componentClient
+                .forEventSourcedEntity(request.customerId)
+                .method(AuditLogEntity::getRecentEvents)
+                .invoke(request.limit);
+        }
+        // Get all events
+        else {
+            eventList = componentClient
+                .forEventSourcedEntity(request.customerId)
+                .method(AuditLogEntity::getAllEvents)
+                .invoke();
+        }
+
+        List<AuditEvent> events = eventList.events();
+
+        List<AuditEventResponse> responses = events.stream()
+            .map(this::toAuditEventResponse)
+            .toList();
+
+        return new AuditLogResponse(responses, responses.size());
+    }
+
+    private AuditEventResponse toAuditEventResponse(AuditEvent event) {
+        String transactionId = switch (event) {
+            case AuditEvent.PaymentCreated e -> e.transactionId();
+            case AuditEvent.PaymentCompleted e -> e.transactionId();
+            case AuditEvent.PaymentFailed e -> e.transactionId();
+            case AuditEvent.RefundInitiated e -> e.transactionId();
+            case AuditEvent.RefundCompleted e -> e.transactionId();
+            case AuditEvent.FraudAlertTriggered e -> e.transactionId();
+            default -> "";
+        };
+
+        return new AuditEventResponse(
+            event.eventType(),
+            event.customerId(),
+            transactionId,
+            event.description(),
+            event.timestamp().toString()
         );
     }
 }
