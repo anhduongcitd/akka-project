@@ -10,12 +10,15 @@ The Online Payment Service includes an **Agentic AI System** that provides intel
 
 ### Agent Components
 
-**3 Specialized Agents:**
+**5 Specialized Agents:**
 - **CustomerSupportAgent** - 24/7 conversational support for payment inquiries
 - **FraudAnalystAgent** - ML-enhanced fraud detection with confidence scoring
 - **PaymentAssistantAgent** - Intelligent payment failure analysis and recovery
+- **PlannerAgent** - Dynamic execution planning and agent selection
+- **SummarizerAgent** - Multi-agent response synthesis and conflict resolution
 
 **Orchestration:**
+- **DynamicAgentWorkflow** - Multi-agent collaboration with dynamic planning
 - **AgentOrchestrationWorkflow** - Supervisor pattern for multi-agent coordination
 - Session memory shared across agents via session ID
 - 60-second timeouts for LLM calls
@@ -415,9 +418,9 @@ public class AgentEndpointIntegrationTest extends TestKitSupport {
 
 ### Test Coverage
 
-- **12 agent unit tests** - Agent configuration, structured responses, fallbacks
-- **7 agent integration tests** - HTTP endpoint integration, session management
-- **103 total tests passing** (including existing payment tests)
+- **12 agent unit tests** - PlannerAgent (6), SummarizerAgent (6)
+- **12 agent integration tests** - DynamicAgentWorkflow (5), AgentCollaborationEndpoint (7)
+- **127 total tests passing** (103 existing + 24 Phase 11 tests)
 
 ## Production Deployment
 
@@ -561,29 +564,268 @@ if (email.contains("example.com") || email.contains("test.com")) {
 - Cache tool responses
 - Increase timeout to 90s for complex queries
 
+## Multi-Agent Collaboration
+
+### Dynamic Agent Team (Phase 11)
+
+**Purpose**: Intelligent multi-agent orchestration for complex queries requiring coordination between multiple agents.
+
+**Architecture:**
+1. **PlannerAgent** analyzes user query and creates execution plan
+2. **DynamicAgentWorkflow** executes plan with dynamic agent selection
+3. **Individual agents** process their assigned sub-queries
+4. **SummarizerAgent** synthesizes results into unified response
+
+**Execution Strategies:**
+- **SEQUENTIAL**: Agents run one after another (e.g., fraud check → recovery suggestions)
+- **PARALLEL**: Agents run simultaneously (e.g., payment status + refund eligibility)
+- **HYBRID**: Mix of sequential and parallel (e.g., fraud check first, then support + assistant in parallel)
+
+### 4. Planner Agent
+
+**Component ID**: `planner-agent`
+
+**Purpose**: Analyze queries and create optimal execution plans
+
+**Capabilities:**
+- Determine which agents are needed for a query
+- Select optimal execution strategy (sequential/parallel/hybrid)
+- Tailor specific queries for each agent
+- Set priorities and required/optional flags
+
+**Response Structure:**
+```java
+public record ExecutionPlan(
+    List<PlanStep> steps,       // Ordered list of agent invocations
+    String strategy,            // SEQUENTIAL, PARALLEL, HYBRID
+    String reasoning            // Why this plan was chosen
+)
+
+public record PlanStep(
+    String agentId,             // customer-support, fraud-analyst, payment-assistant
+    String query,               // Tailored query for this agent
+    int priority,               // 1=highest, 2=medium, 3=low
+    boolean required            // true=must succeed, false=optional
+)
+```
+
+**Example Query Planning:**
+
+Input: "Check if transaction txn_123 is fraudulent and suggest recovery if needed"
+
+Output:
+```json
+{
+  "steps": [
+    {
+      "agentId": "fraud-analyst",
+      "query": "Analyze transaction txn_123 for fraud indicators",
+      "priority": 1,
+      "required": true
+    },
+    {
+      "agentId": "payment-assistant",
+      "query": "Suggest recovery actions for txn_123 if legitimate",
+      "priority": 2,
+      "required": false
+    }
+  ],
+  "strategy": "SEQUENTIAL",
+  "reasoning": "Fraud check must complete before suggesting recovery to ensure legitimate transaction"
+}
+```
+
+### 5. Summarizer Agent
+
+**Component ID**: `summarizer-agent`
+
+**Purpose**: Combine responses from multiple agents into coherent answer
+
+**Capabilities:**
+- Synthesize outputs from multiple agents
+- Resolve conflicts between agent recommendations
+- Prioritize critical information (fraud alerts, failures)
+- Provide unified user-facing response
+
+**Response Structure:**
+```java
+public record SummarizedResponse(
+    String answer,                      // Unified answer to user
+    String confidence,                  // HIGH, MEDIUM, LOW
+    Map<String, String> sources,        // Which agents contributed what
+    String recommendation               // Final actionable recommendation
+)
+```
+
+**Conflict Resolution:**
+- Fraud alerts always take precedence
+- Payment failures lead with recovery suggestions
+- Contradictory information acknowledged with "may" language
+- Confidence downgraded to MEDIUM/LOW when agents disagree
+
+**Example Summarization:**
+
+Input: Multiple agent responses
+```
+fraud-analyst: "High fraud risk detected - multiple suspicious patterns"
+customer-support: "Transaction details look normal"
+payment-assistant: "Card is valid and has sufficient funds"
+```
+
+Output:
+```json
+{
+  "answer": "We've detected high fraud risk on this transaction and cannot proceed. Multiple suspicious patterns were identified.",
+  "confidence": "HIGH",
+  "sources": {
+    "fraud-analyst": "Critical fraud risk",
+    "customer-support": "Normal details",
+    "payment-assistant": "Valid card"
+  },
+  "recommendation": "Transaction blocked for security. Contact support to verify your identity."
+}
+```
+
+### Multi-Agent Collaboration API
+
+**Endpoint**: `POST /agents/collaborate`
+
+**Request:**
+```json
+{
+  "userQuery": "Why did my payment fail and is it safe to retry?",
+  "customerId": "cust_123",
+  "context": "txn_abc123 amount=500.00 currency=USD",
+  "sessionId": null
+}
+```
+
+**Response:**
+```json
+{
+  "sessionId": "880e8400-e29b-41d4-a716-446655440003",
+  "answer": "Your payment failed because the card expired in December 2025. No fraud detected, safe to retry with updated card.",
+  "confidence": "HIGH",
+  "planUsed": {
+    "steps": [
+      {
+        "agentId": "fraud-analyst",
+        "query": "Check txn_abc123 for fraud",
+        "priority": 1,
+        "required": true
+      },
+      {
+        "agentId": "payment-assistant",
+        "query": "Analyze failure for txn_abc123",
+        "priority": 1,
+        "required": true
+      }
+    ],
+    "strategy": "PARALLEL",
+    "reasoning": "Fraud check and failure analysis are independent"
+  },
+  "agentContributions": {
+    "fraud-analyst": "No fraud indicators detected, transaction is legitimate",
+    "payment-assistant": "Card expired on 12/2025, update required to retry"
+  },
+  "status": "COMPLETED"
+}
+```
+
+**Query Performance Metrics:**
+
+**Endpoint**: `GET /agents/performance/{agentId}`
+
+Example: `GET /agents/performance/customer-support`
+
+Response:
+```json
+{
+  "agentId": "customer-support",
+  "totalCalls": 1547,
+  "successfulCalls": 1489,
+  "failedCalls": 58,
+  "successRate": 0.962,
+  "averageLatencyMs": 847.3,
+  "averageTokensPerCall": 1823.5,
+  "averageCostPerCall": 0.0045,
+  "totalCostUsd": 6.96
+}
+```
+
+### When to Use Multi-Agent Collaboration
+
+**Use Cases:**
+- Complex queries requiring expertise from multiple domains
+- Fraud investigation + recovery planning
+- Payment analysis requiring both support and technical agents
+- Cross-functional inquiries (status + refund + failure analysis)
+
+**Benefits:**
+- Automatic agent selection based on query analysis
+- Parallel execution when possible (faster response)
+- Conflict resolution and response synthesis
+- Performance tracking per agent
+
+**Example Queries:**
+- "Is my payment secure and why did it fail?" → fraud-analyst + payment-assistant
+- "Check my refund status and payment history" → customer-support (parallel sub-queries)
+- "Analyze this suspicious transaction and block if needed" → fraud-analyst → customer-support
+
+## Performance Tracking
+
+**Entity**: `AgentPerformanceEntity` (Key-Value Entity)
+
+**Entity ID**: Agent component ID (e.g., "customer-support", "fraud-analyst")
+
+**Tracked Metrics:**
+- Total calls, successful calls, failed calls
+- Average latency per call
+- Total tokens consumed
+- Total cost in USD
+- Success rate, failure rate
+- Average cost per call, tokens per call
+
+**Recording:**
+- Automatically tracked by DynamicAgentWorkflow
+- Success: `recordSuccess(latencyMs, tokensUsed, costUsd)`
+- Failure: `recordFailure(latencyMs)`
+
+**Querying:**
+```bash
+# Via API
+curl http://localhost:9000/agents/performance/customer-support
+
+# Via ComponentClient
+componentClient
+  .forKeyValueEntity("customer-support")
+  .method(AgentPerformanceEntity::getPerformance)
+  .invoke()
+```
+
 ## Future Enhancements
 
 ### Planned Features
 
-1. **Dynamic Agent Team** (Phase 3.5)
-   - PlannerAgent selects agents dynamically
-   - Multi-agent collaboration on complex issues
-   - See plan: `AgentOrchestrationWorkflow` with dynamic routing
-
-2. **Advanced Guardrails**
+1. **Advanced Guardrails**
    - Jailbreak detection with `SimilarityGuard`
    - Toxic language filtering
    - Hallucination detection
 
-3. **Agent Analytics Dashboard**
+2. **Agent Analytics Dashboard**
    - Real-time agent performance metrics
    - Cost tracking per agent
    - Escalation trend analysis
 
-4. **Fine-Tuned Models**
+3. **Fine-Tuned Models**
    - Train custom models on payment domain
    - Improve fraud detection accuracy
    - Reduce token costs
+
+4. **Agent Learning Loop**
+   - Store successful agent interactions
+   - Use as few-shot examples for improved responses
+   - Continuous improvement from production data
 
 ## References
 

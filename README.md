@@ -1,6 +1,6 @@
 # Online Payment Service
 
-[![Tests](https://img.shields.io/badge/tests-103%20passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
+[![Tests](https://img.shields.io/badge/tests-127%20passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
 [![Status](https://img.shields.io/badge/status-production--ready-blue)](IMPLEMENTATION_SUMMARY.md)
 [![Security](https://img.shields.io/badge/security-enterprise--grade-blue)](IMPLEMENTATION_SUMMARY.md)
@@ -8,7 +8,7 @@
 
 A comprehensive payment processing service built with Akka SDK that handles credit/debit card payments, digital wallets, multi-currency transactions, and refunds with PCI DSS Level 1 compliance. Now enhanced with AI agents for customer support, fraud detection, and payment failure resolution.
 
-**Status**: ✅ **Production-Ready** - All features complete with enterprise-grade security and AI agents (103/103 tests passing)
+**Status**: ✅ **Production-Ready** - All features complete with enterprise-grade security and AI agents (127/127 tests passing)
 
 ## Features
 
@@ -32,6 +32,10 @@ A comprehensive payment processing service built with Akka SDK that handles cred
 - **Customer Support Agent**: 24/7 self-service chatbot for payment inquiries and refunds
 - **Fraud Analyst Agent**: ML-enhanced fraud detection with confidence scoring
 - **Payment Assistant Agent**: Intelligent failure analysis and recovery recommendations
+- **Multi-Agent Collaboration**: Dynamic planning, parallel execution, intelligent result synthesis
+- **Planner Agent**: Automatic agent selection and execution strategy optimization
+- **Summarizer Agent**: Multi-agent response synthesis and conflict resolution
+- **Performance Tracking**: Real-time metrics for cost, latency, success rate per agent
 - **Guardrails**: PII detection, output validation, audit logging for compliance
 - **Session Memory**: Conversational context maintained across interactions
 
