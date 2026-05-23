@@ -21,6 +21,8 @@ public class PaymentHistoryView extends View {
     /**
      * Entry representing a payment transaction in the view.
      * Note: status is stored as String to enable querying.
+     * completedAt uses Instant.EPOCH (1970-01-01) as sentinel for null.
+     * failureReason uses empty string as sentinel for null.
      */
     public record PaymentHistoryEntry(
         String transactionId,
@@ -31,8 +33,8 @@ public class PaymentHistoryView extends View {
         String currency,
         String status,  // Stored as String for querying
         Instant createdAt,
-        Instant completedAt,
-        String failureReason
+        Instant completedAt,  // Use Instant.EPOCH for null
+        String failureReason  // Use "" for null
     ) {}
 
     /**
@@ -121,8 +123,8 @@ public class PaymentHistoryView extends View {
                         initiated.amount().currency().name(),
                         "PENDING",
                         initiated.timestamp(),
-                        null,
-                        null
+                        Instant.EPOCH,  // Sentinel for null
+                        ""  // Sentinel for null
                     );
                     yield effects().updateRow(entry);
                 }
@@ -141,7 +143,7 @@ public class PaymentHistoryView extends View {
                         "SUCCEEDED",
                         rowState().createdAt,
                         succeeded.timestamp(),
-                        null
+                        ""  // Sentinel for null
                     );
                     yield effects().updateRow(updated);
                 }
