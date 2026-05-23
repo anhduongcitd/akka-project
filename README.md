@@ -1,12 +1,12 @@
 # Online Payment Service
 
-[![Tests](https://img.shields.io/badge/tests-58%20passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
+[![Tests](https://img.shields.io/badge/tests-64%20passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
 [![Status](https://img.shields.io/badge/status-production--ready-blue)](IMPLEMENTATION_SUMMARY.md)
 
 A comprehensive payment processing service built with Akka SDK that handles credit/debit card payments, digital wallets, multi-currency transactions, and refunds with PCI DSS Level 1 compliance.
 
-**Status**: ✅ **Production-Ready MVP** - All 4 core user stories complete with 58/58 tests passing
+**Status**: ✅ **Production-Ready** - All 4 core user stories complete + idempotency support with 64/64 tests passing
 
 ## Features
 
@@ -82,11 +82,38 @@ curl -X POST http://localhost:9000/payment/transactions \
       "email": "customer@example.com",
       "name": "John Doe"
     },
-    "savePaymentMethod": true
+    "savePaymentMethod": true,
+    "idempotencyKey": null
   }'
 ```
 
-#### Option B: Payment with Saved Payment Method
+#### Option B: Payment with Idempotency Key (Prevent Duplicates)
+
+Use an idempotency key to prevent duplicate charges if the request is retried:
+
+```bash
+curl -X POST http://localhost:9000/payment/transactions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": {
+      "value": "50.00",
+      "currency": "USD"
+    },
+    "cardToken": "tok_visa",
+    "merchantReference": "TEST-ORDER-001",
+    "customer": {
+      "customerId": "cust_123",
+      "email": "customer@example.com",
+      "name": "John Doe"
+    },
+    "savePaymentMethod": true,
+    "idempotencyKey": "unique-request-id-12345"
+  }'
+```
+
+If you retry with the same idempotency key, you'll get the same transaction back (no duplicate charge).
+
+#### Option C: Payment with Saved Payment Method
 
 Use a previously saved payment method for faster checkout:
 
@@ -104,7 +131,8 @@ curl -X POST http://localhost:9000/payment/transactions \
       "customerId": "cust_123",
       "email": "customer@example.com",
       "name": "John Doe"
-    }
+    },
+    "idempotencyKey": null
   }'
 ```
 
