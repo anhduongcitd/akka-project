@@ -33,6 +33,13 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     private static final int CUSTOMER_MAX_PAYMENTS = 50;
     private static final int CUSTOMER_WINDOW_MINUTES = 60;
 
+    // Fraud detection configuration
+    private static final int FRAUD_VELOCITY_LIMIT = 5;      // Max 5 payments
+    private static final int FRAUD_VELOCITY_WINDOW = 10;    // in 10 minutes
+    private static final BigDecimal FRAUD_HIGH_VALUE = new BigDecimal("5000.00");  // $5000
+    private static final int FRAUD_HIGH_VALUE_WINDOW = 60;  // in 1 hour
+    private static final int FRAUD_DUPLICATE_WINDOW = 5;    // 5 minutes
+
     public PaymentEndpoint(ComponentClient componentClient, ReceiptGenerator receiptGenerator, ExchangeRateService exchangeRateService) {
         this.componentClient = componentClient;
         this.receiptGenerator = receiptGenerator;
@@ -203,6 +210,28 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             throw new IllegalArgumentException("Payment limit exceeded for customer. Please try again later.");
         }
 
+        // Fraud detection - check for suspicious patterns
+        Money amount = request.amount.toMoney();
+        var fraudCheck = new FraudCheckEntity.CheckFraudRequest(
+            request.merchantReference,
+            amount.amount(),
+            amount.currency().name(),
+            FRAUD_VELOCITY_LIMIT,
+            FRAUD_VELOCITY_WINDOW,
+            FRAUD_HIGH_VALUE,
+            FRAUD_HIGH_VALUE_WINDOW,
+            FRAUD_DUPLICATE_WINDOW
+        );
+
+        var fraudResult = componentClient
+            .forKeyValueEntity("fraud:" + request.customer.customerId())
+            .method(FraudCheckEntity::checkAndRecord)
+            .invoke(fraudCheck);
+
+        if (!fraudResult.passed()) {
+            throw new IllegalArgumentException("Payment blocked: " + fraudResult.reason());
+        }
+
         // Check idempotency key if provided
         String transactionId;
         if (request.idempotencyKey != null && !request.idempotencyKey.isBlank()) {
@@ -234,10 +263,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             transactionId = "txn_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
         }
 
-        // Convert request to domain objects
-        Money amount = request.amount.toMoney();
-
-        // Validate amount is greater than zero
+        // Validate amount is greater than zero (amount already created for fraud check)
         if (amount.amount().compareTo(java.math.BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Payment amount must be greater than zero");
         }
