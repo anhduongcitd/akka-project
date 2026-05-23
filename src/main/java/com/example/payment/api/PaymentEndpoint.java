@@ -197,11 +197,14 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
         // Generate refund workflow ID
         String refundWorkflowId = "refund_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
 
+        // Use default reason if none provided
+        String reason = request.reason != null ? request.reason : "Customer requested refund";
+
         // Start refund workflow
         var startCommand = new RefundWorkflow.StartRefund(
             transactionId,
             refundAmount,
-            request.reason != null ? request.reason : "Customer requested refund"
+            reason
         );
 
         String refundId = componentClient
@@ -215,7 +218,7 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             transactionId,
             "PENDING",
             toMoneyResponse(refundAmount),
-            request.reason
+            reason
         );
     }
 
