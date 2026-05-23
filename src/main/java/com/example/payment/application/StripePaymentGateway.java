@@ -124,12 +124,34 @@ public class StripePaymentGateway {
     }
 
     /**
+     * Synchronous refund method for workflow integration.
+     * @param chargeId Original Stripe charge ID (stripePaymentIntentId)
+     * @param amount Refund amount
+     * @return Gateway refund ID
+     * @throws RuntimeException if refund fails
+     */
+    public String refund(String chargeId, Money amount) {
+        try {
+            RefundResult result = refundPayment(chargeId, amount, java.util.UUID.randomUUID().toString())
+                .get(30, java.util.concurrent.TimeUnit.SECONDS);
+
+            if (result.success) {
+                return result.refundId;
+            } else {
+                throw new RuntimeException("Refund failed: " + result.failureReason);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Refund error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Convert Money amount to minor units (cents for USD, EUR, etc.)
      * Stripe expects amounts in smallest currency unit.
      */
     private Long convertToMinorUnits(Money amount) {
         int decimalPlaces = amount.currency().decimalPlaces();
         long multiplier = (long) Math.pow(10, decimalPlaces);
-        return amount.amount().multiply(new java.math.BigDecimal(multiplier)).longValue();
+        return amount.value().multiply(new java.math.BigDecimal(multiplier)).longValue();
     }
 }

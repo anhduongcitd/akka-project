@@ -69,8 +69,30 @@ curl -X POST http://localhost:9000/payment/transactions \
     },
     "cardToken": "tok_visa",
     "merchantReference": "TEST-ORDER-001",
+    "customer": {
+      "customerId": "cust_123",
+      "email": "customer@example.com",
+      "name": "John Doe"
+    },
     "savePaymentMethod": true
   }'
+```
+
+Response:
+```json
+{
+  "transactionId": "txn_abc123...",
+  "status": "PENDING",
+  "amount": {
+    "value": "50.00",
+    "currency": "USD",
+    "formatted": "$50.00"
+  },
+  "merchantReference": "TEST-ORDER-001",
+  "createdAt": "2024-01-15T10:30:00Z",
+  "completedAt": null,
+  "failureReason": null
+}
 ```
 
 ## API Endpoints
@@ -88,6 +110,74 @@ curl -X POST http://localhost:9000/payment/transactions \
 ### Refunds
 - `POST /payment/transactions/{id}/refunds` - Process refund
 - `GET /payment/transactions/{id}/refunds` - List refunds
+
+#### Initiate Refund
+
+Process a full or partial refund for a successful payment:
+
+```bash
+# Partial refund
+curl -X POST http://localhost:9000/payment/transactions/txn_abc123/refunds \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": {
+      "value": "25.00",
+      "currency": "USD"
+    },
+    "reason": "Customer requested partial refund"
+  }'
+```
+
+Response:
+```json
+{
+  "refundId": "ref_xyz789...",
+  "transactionId": "txn_abc123",
+  "status": "PENDING",
+  "amount": {
+    "value": "25.00",
+    "currency": "USD",
+    "formatted": "$25.00"
+  },
+  "reason": "Customer requested partial refund"
+}
+```
+
+#### Get Refunds List
+
+Retrieve all refunds for a transaction:
+
+```bash
+curl -X GET http://localhost:9000/payment/transactions/txn_abc123/refunds
+```
+
+Response:
+```json
+{
+  "refunds": [
+    {
+      "refundId": "ref_xyz789...",
+      "amount": {
+        "value": "25.00",
+        "currency": "USD",
+        "formatted": "$25.00"
+      },
+      "status": "SUCCEEDED",
+      "reason": "Customer requested partial refund",
+      "createdAt": "2024-01-15T11:00:00Z",
+      "completedAt": "2024-01-15T11:00:05Z"
+    }
+  ]
+}
+```
+
+#### Get Transaction with Refunds
+
+Check payment status including all refunds:
+
+```bash
+curl -X GET http://localhost:9000/payment/transactions/txn_abc123
+```
 
 ### Multi-Currency
 - `GET /payment/exchange-rates` - Get current rates

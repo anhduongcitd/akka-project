@@ -7,6 +7,7 @@ import akka.javasdk.annotations.http.Post;
 import akka.javasdk.client.ComponentClient;
 import com.example.payment.application.PaymentProcessingWorkflow;
 import com.example.payment.application.PaymentTransactionEntity;
+import com.example.payment.application.RefundWorkflow;
 import com.example.payment.domain.*;
 
 import java.math.BigDecimal;
@@ -69,6 +70,30 @@ public class PaymentEndpoint {
 
     public record MoneyResponse(String value, String currency, String formatted) {}
 
+    public record RefundRequest(
+        MoneyRequest amount,
+        String reason
+    ) {}
+
+    public record RefundResponse(
+        String refundId,
+        String transactionId,
+        String status,
+        MoneyResponse amount,
+        String reason
+    ) {}
+
+    public record RefundListResponse(List<RefundInfo> refunds) {}
+
+    public record RefundInfo(
+        String refundId,
+        MoneyResponse amount,
+        String status,
+        String reason,
+        String createdAt,
+        String completedAt
+    ) {}
+
     // API Methods
     @Post("/transactions")
     public PaymentResponse createPayment(CreatePaymentRequest request) {
@@ -125,6 +150,59 @@ public class PaymentEndpoint {
         return toPaymentResponse(transaction);
     }
 
+    @Post("/transactions/{transactionId}/refunds")
+    public RefundResponse initiateRefund(String transactionId, RefundRequest request) {
+        // Validate request
+        if (request.amount == null) {
+            throw new IllegalArgumentException("Refund amount is required");
+        }
+
+        Money refundAmount = request.amount.toMoney();
+
+        // Generate refund workflow ID
+        String refundWorkflowId = "refund_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+
+        // Start refund workflow
+        var startCommand = new RefundWorkflow.StartRefund(
+            transactionId,
+            refundAmount,
+            request.reason != null ? request.reason : "Customer requested refund"
+        );
+
+        String refundId = componentClient
+            .forWorkflow(refundWorkflowId)
+            .method(RefundWorkflow::startRefund)
+            .invoke(startCommand);
+
+        // Return immediate response
+        return new RefundResponse(
+            refundId,
+            transactionId,
+            "PENDING",
+            toMoneyResponse(refundAmount),
+            request.reason
+        );
+    }
+
+    @Get("/transactions/{transactionId}/refunds")
+    public RefundListResponse getRefunds(String transactionId) {
+        // Get payment transaction from entity
+        PaymentTransaction transaction = componentClient
+            .forEventSourcedEntity(transactionId)
+            .method(PaymentTransactionEntity::getPayment)
+            .invoke();
+
+        if (transaction == null) {
+            throw new IllegalArgumentException("Transaction not found");
+        }
+
+        List<RefundInfo> refunds = transaction.refunds().stream()
+            .map(this::toRefundInfo)
+            .toList();
+
+        return new RefundListResponse(refunds);
+    }
+
     // Helper methods
     private PaymentResponse toPaymentResponse(PaymentTransaction transaction) {
         return new PaymentResponse(
@@ -143,6 +221,17 @@ public class PaymentEndpoint {
             money.amount().toPlainString(),
             money.currency().name(),
             money.format()
+        );
+    }
+
+    private RefundInfo toRefundInfo(Refund refund) {
+        return new RefundInfo(
+            refund.refundId(),
+            toMoneyResponse(refund.amount()),
+            refund.status().name(),
+            refund.reason(),
+            refund.createdAt().toString(),
+            refund.completedAt() != null ? refund.completedAt().toString() : null
         );
     }
 }
