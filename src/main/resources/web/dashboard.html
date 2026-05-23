@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Analytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-title {
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+
+        .card-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .card-subtitle {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+
+        .charts-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-container {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .chart-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        canvas {
+            max-height: 300px;
+        }
+
+        .agents-table {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f8f9fa;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #666;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-idle {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .refresh-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            font-size: 12px;
+            color: #666;
+        }
+
+        .refresh-indicator.loading {
+            background: #667eea;
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            .charts-row {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 Agent Analytics Dashboard</h1>
+            <p class="subtitle">Real-time monitoring of AI agent performance and costs</p>
+        </header>
+
+        <div class="summary-cards" id="summaryCards">
+            <!-- Summary cards will be inserted here -->
+        </div>
+
+        <div class="charts-row">
+            <div class="chart-container">
+                <h3 class="chart-title">Success Rate by Agent</h3>
+                <canvas id="successRateChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Cost Distribution</h3>
+                <canvas id="costChart"></canvas>
+            </div>
+        </div>
+
+        <div class="charts-row">
+            <div class="chart-container">
+                <h3 class="chart-title">Average Latency (ms)</h3>
+                <canvas id="latencyChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3 class="chart-title">Call Volume by Agent</h3>
+                <canvas id="callsChart"></canvas>
+            </div>
+        </div>
+
+        <div class="agents-table">
+            <h3 class="chart-title">Agent Details</h3>
+            <table id="agentsTable">
+                <thead>
+                    <tr>
+                        <th>Agent</th>
+                        <th>Status</th>
+                        <th>Total Calls</th>
+                        <th>Success Rate</th>
+                        <th>Avg Latency</th>
+                        <th>Total Cost</th>
+                        <th>Avg Cost/Call</th>
+                        <th>Last Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Agent rows will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="refresh-indicator" id="refreshIndicator">
+        Last updated: <span id="lastUpdate">Loading...</span>
+    </div>
+
+    <script>
+        // Chart instances
+        let successRateChart, costChart, latencyChart, callsChart;
+
+        // API base URL
+        const API_BASE = window.location.origin;
+
+        // Initialize dashboard
+        async function init() {
+            await loadData();
+            setInterval(loadData, 5000); // Refresh every 5 seconds
+        }
+
+        // Load all data
+        async function loadData() {
+            try {
+                document.getElementById('refreshIndicator').classList.add('loading');
+
+                const [agentsData, costsData] = await Promise.all([
+                    fetch(`${API_BASE}/analytics/agents`).then(r => r.json()),
+                    fetch(`${API_BASE}/analytics/costs`).then(r => r.json())
+                ]);
+
+                updateSummaryCards(agentsData.summary);
+                updateCharts(agentsData.agents, costsData);
+                updateTable(agentsData.agents);
+
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                document.getElementById('refreshIndicator').classList.remove('loading');
+            } catch (error) {
+                console.error('Failed to load data:', error);
+                document.getElementById('lastUpdate').textContent = 'Error loading data';
+            }
+        }
+
+        // Update summary cards
+        function updateSummaryCards(summary) {
+            const cards = [
+                { title: 'Total Agents', value: summary.totalAgents, subtitle: 'Active agents' },
+                { title: 'Total Calls', value: summary.totalCalls.toLocaleString(), subtitle: `${summary.totalSuccesses} successful` },
+                { title: 'Success Rate', value: `${(summary.overallSuccessRate * 100).toFixed(1)}%`, subtitle: `${summary.totalFailures} failures` },
+                { title: 'Total Cost', value: `$${summary.totalCostUsd.toFixed(2)}`, subtitle: `${summary.totalTokensUsed.toLocaleString()} tokens` }
+            ];
+
+            document.getElementById('summaryCards').innerHTML = cards.map(card => `
+                <div class="card">
+                    <div class="card-title">${card.title}</div>
+                    <div class="card-value">${card.value}</div>
+                    <div class="card-subtitle">${card.subtitle}</div>
+                </div>
+            `).join('');
+        }
+
+        // Update charts
+        function updateCharts(agents, costsData) {
+            const agentNames = agents.map(a => a.displayName);
+            const successRates = agents.map(a => (a.successRate * 100).toFixed(1));
+            const latencies = agents.map(a => a.averageLatencyMs.toFixed(0));
+            const calls = agents.map(a => a.totalCalls);
+
+            const costs = costsData.byAgent.map(a => a.cost);
+            const costLabels = costsData.byAgent.map(a => a.displayName);
+
+            // Success Rate Chart
+            if (successRateChart) successRateChart.destroy();
+            successRateChart = new Chart(document.getElementById('successRateChart'), {
+                type: 'bar',
+                data: {
+                    labels: agentNames,
+                    datasets: [{
+                        label: 'Success Rate (%)',
+                        data: successRates,
+                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+
+            // Cost Chart (Pie)
+            if (costChart) costChart.destroy();
+            costChart = new Chart(document.getElementById('costChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: costLabels,
+                    datasets: [{
+                        data: costs,
+                        backgroundColor: [
+                            'rgba(102, 126, 234, 0.8)',
+                            'rgba(118, 75, 162, 0.8)',
+                            'rgba(255, 99, 132, 0.8)',
+                            'rgba(255, 206, 86, 0.8)',
+                            'rgba(75, 192, 192, 0.8)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+
+            // Latency Chart
+            if (latencyChart) latencyChart.destroy();
+            latencyChart = new Chart(document.getElementById('latencyChart'), {
+                type: 'bar',
+                data: {
+                    labels: agentNames,
+                    datasets: [{
+                        label: 'Latency (ms)',
+                        data: latencies,
+                        backgroundColor: 'rgba(118, 75, 162, 0.8)',
+                        borderColor: 'rgba(118, 75, 162, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Calls Chart
+            if (callsChart) callsChart.destroy();
+            callsChart = new Chart(document.getElementById('callsChart'), {
+                type: 'bar',
+                data: {
+                    labels: agentNames,
+                    datasets: [{
+                        label: 'Total Calls',
+                        data: calls,
+                        backgroundColor: 'rgba(75, 192, 192, 0.8)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update agents table
+        function updateTable(agents) {
+            const tbody = document.querySelector('#agentsTable tbody');
+            tbody.innerHTML = agents.map(agent => `
+                <tr>
+                    <td><strong>${agent.displayName}</strong></td>
+                    <td><span class="status-badge status-${agent.status.toLowerCase()}">${agent.status}</span></td>
+                    <td>${agent.totalCalls.toLocaleString()}</td>
+                    <td>${(agent.successRate * 100).toFixed(1)}%</td>
+                    <td>${agent.averageLatencyMs.toFixed(0)}ms</td>
+                    <td>$${agent.totalCostUsd.toFixed(2)}</td>
+                    <td>$${agent.averageCostPerCall.toFixed(4)}</td>
+                    <td>${new Date(agent.lastUpdated).toLocaleString()}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Start dashboard
+        init();
+    </script>
+</body>
+</html>
