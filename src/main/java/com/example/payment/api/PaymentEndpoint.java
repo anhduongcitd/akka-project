@@ -27,6 +27,12 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     private final ReceiptGenerator receiptGenerator;
     private final ExchangeRateService exchangeRateService;
 
+    // Rate limit configuration
+    private static final int IP_MAX_REQUESTS = 100;
+    private static final int IP_WINDOW_MINUTES = 1;
+    private static final int CUSTOMER_MAX_PAYMENTS = 50;
+    private static final int CUSTOMER_WINDOW_MINUTES = 60;
+
     public PaymentEndpoint(ComponentClient componentClient, ReceiptGenerator receiptGenerator, ExchangeRateService exchangeRateService) {
         this.componentClient = componentClient;
         this.receiptGenerator = receiptGenerator;
@@ -140,6 +146,29 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
     // API Methods
     @Post("/transactions")
     public PaymentResponse createPayment(CreatePaymentRequest request) {
+        // Rate limiting - check IP limit
+        String clientIp = requestContext().requestHeader("X-Forwarded-For")
+            .map(akka.http.javadsl.model.HttpHeader::value)
+            .orElse(requestContext().requestHeader("X-Real-IP")
+                .map(akka.http.javadsl.model.HttpHeader::value)
+                .orElse("unknown"));
+
+        var ipCheckRequest = new RateLimitEntity.CheckRateLimitRequest(
+            clientIp,
+            RateLimitRecord.RateLimitType.IP,
+            IP_MAX_REQUESTS,
+            IP_WINDOW_MINUTES
+        );
+
+        String ipResult = componentClient
+            .forKeyValueEntity("ip:" + clientIp)
+            .method(RateLimitEntity::checkAndRecord)
+            .invoke(ipCheckRequest);
+
+        if ("EXCEEDED".equals(ipResult)) {
+            throw new IllegalArgumentException("Rate limit exceeded for IP address. Please try again later.");
+        }
+
         // Validate request
         if (request.amount == null) {
             throw new IllegalArgumentException("Amount is required");
@@ -155,6 +184,23 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
 
         if (request.customer == null) {
             throw new IllegalArgumentException("Customer information is required");
+        }
+
+        // Rate limiting - check customer payment limit
+        var customerCheckRequest = new RateLimitEntity.CheckRateLimitRequest(
+            request.customer.customerId(),
+            RateLimitRecord.RateLimitType.CUSTOMER,
+            CUSTOMER_MAX_PAYMENTS,
+            CUSTOMER_WINDOW_MINUTES
+        );
+
+        String customerResult = componentClient
+            .forKeyValueEntity("customer:" + request.customer.customerId())
+            .method(RateLimitEntity::checkAndRecord)
+            .invoke(customerCheckRequest);
+
+        if ("EXCEEDED".equals(customerResult)) {
+            throw new IllegalArgumentException("Payment limit exceeded for customer. Please try again later.");
         }
 
         // Check idempotency key if provided

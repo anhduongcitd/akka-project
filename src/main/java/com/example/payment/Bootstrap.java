@@ -50,7 +50,9 @@ public class Bootstrap implements ServiceSetup {
                 } else if (clazz == ExchangeRateService.class) {
                     return clazz.cast(new ExchangeRateService());
                 }
-                throw new IllegalArgumentException("Unknown dependency: " + clazz.getName());
+                // For other dependencies (RateLimitService, ComponentClient), return null
+                // to let Akka handle auto-injection
+                return null;
             }
         };
     }
