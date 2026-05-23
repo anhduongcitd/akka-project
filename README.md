@@ -1,12 +1,12 @@
 # Online Payment Service
 
-[![Tests](https://img.shields.io/badge/tests-51%20passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
+[![Tests](https://img.shields.io/badge/tests-58%20passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
 [![Status](https://img.shields.io/badge/status-production--ready-blue)](IMPLEMENTATION_SUMMARY.md)
 
 A comprehensive payment processing service built with Akka SDK that handles credit/debit card payments, digital wallets, multi-currency transactions, and refunds with PCI DSS Level 1 compliance.
 
-**Status**: ✅ **Production-Ready MVP** - All 4 core user stories complete with 51/51 tests passing
+**Status**: ✅ **Production-Ready MVP** - All 4 core user stories complete with 58/58 tests passing
 
 ## Features
 
@@ -361,8 +361,61 @@ curl -X GET http://localhost:9000/payment/transactions/txn_abc123
 ```
 
 ### Multi-Currency
-- `GET /payment/exchange-rates` - Get current rates
-- `POST /payment/convert` - Convert currencies
+
+#### Get Exchange Rates
+
+Get current exchange rates for all supported currencies:
+
+```bash
+curl -X GET http://localhost:9000/payment/exchange-rates
+```
+
+Response:
+```json
+{
+  "rates": {
+    "USD": "1",
+    "EUR": "0.85",
+    "GBP": "0.73",
+    "JPY": "110.0",
+    "AUD": "1.35"
+  },
+  "baseCurrency": "USD",
+  "timestamp": "2026-05-23T12:00:00Z"
+}
+```
+
+#### Convert Currency
+
+Convert an amount from one currency to another:
+
+```bash
+curl -X POST http://localhost:9000/payment/convert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": "100.00",
+    "fromCurrency": "USD",
+    "toCurrency": "EUR"
+  }'
+```
+
+Response:
+```json
+{
+  "originalAmount": {
+    "value": "100.00",
+    "currency": "USD",
+    "formatted": "$100.00"
+  },
+  "convertedAmount": {
+    "value": "85.00",
+    "currency": "EUR",
+    "formatted": "€85.00"
+  },
+  "exchangeRate": "0.8500",
+  "timestamp": "2026-05-23T12:00:00Z"
+}
+```
 
 ## Testing
 

@@ -25,10 +25,12 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
 
     private final ComponentClient componentClient;
     private final ReceiptGenerator receiptGenerator;
+    private final ExchangeRateService exchangeRateService;
 
-    public PaymentEndpoint(ComponentClient componentClient, ReceiptGenerator receiptGenerator) {
+    public PaymentEndpoint(ComponentClient componentClient, ReceiptGenerator receiptGenerator, ExchangeRateService exchangeRateService) {
         this.componentClient = componentClient;
         this.receiptGenerator = receiptGenerator;
+        this.exchangeRateService = exchangeRateService;
     }
 
     // Request/Response records
@@ -113,6 +115,25 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
         String status,      // Optional: filter by status
         String startDate,   // Optional: filter by date range (ISO instant format)
         String endDate      // Optional: filter by date range (ISO instant format)
+    ) {}
+
+    public record ExchangeRatesResponse(
+        java.util.Map<String, String> rates,
+        String baseCurrency,
+        String timestamp
+    ) {}
+
+    public record CurrencyConversionRequest(
+        String amount,
+        String fromCurrency,
+        String toCurrency
+    ) {}
+
+    public record CurrencyConversionResponse(
+        MoneyResponse originalAmount,
+        MoneyResponse convertedAmount,
+        String exchangeRate,
+        String timestamp
     ) {}
 
     // API Methods
@@ -364,6 +385,47 @@ public class PaymentEndpoint extends AbstractHttpEndpoint {
             entry.createdAt().toString(),
             entry.completedAt() != null ? entry.completedAt().toString() : null,
             entry.failureReason()
+        );
+    }
+
+    @Get("/exchange-rates")
+    public ExchangeRatesResponse getExchangeRates() {
+        var rates = exchangeRateService.getExchangeRates();
+
+        // Convert rates to String format for JSON response
+        java.util.Map<String, String> ratesMap = new java.util.HashMap<>();
+        rates.rates().forEach((currency, rate) ->
+            ratesMap.put(currency.name(), rate.toPlainString())
+        );
+
+        return new ExchangeRatesResponse(
+            ratesMap,
+            rates.baseCurrency().name(),
+            rates.timestamp().toString()
+        );
+    }
+
+    @Post("/convert")
+    public CurrencyConversionResponse convertCurrency(CurrencyConversionRequest request) {
+        // Validate request
+        if (request.amount == null || request.fromCurrency == null || request.toCurrency == null) {
+            throw new IllegalArgumentException("amount, fromCurrency, and toCurrency are required");
+        }
+
+        BigDecimal amount = new BigDecimal(request.amount);
+        Currency fromCurrency = Currency.valueOf(request.fromCurrency.toUpperCase());
+        Currency toCurrency = Currency.valueOf(request.toCurrency.toUpperCase());
+
+        var result = exchangeRateService.convertCurrency(amount, fromCurrency, toCurrency);
+
+        var originalMoney = new Money(result.originalAmount(), result.fromCurrency());
+        var convertedMoney = new Money(result.convertedAmount(), result.toCurrency());
+
+        return new CurrencyConversionResponse(
+            toMoneyResponse(originalMoney),
+            toMoneyResponse(convertedMoney),
+            result.exchangeRate().toPlainString(),
+            result.timestamp().toString()
         );
     }
 }

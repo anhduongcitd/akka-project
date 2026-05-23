@@ -6,6 +6,7 @@ import akka.javasdk.annotations.Setup;
 import com.example.payment.application.ReceiptGenerator;
 import com.example.payment.application.StripePaymentGateway;
 import com.example.payment.application.EmailService;
+import com.example.payment.application.ExchangeRateService;
 import com.typesafe.config.Config;
 
 /**
@@ -46,6 +47,8 @@ public class Bootstrap implements ServiceSetup {
                     } else {
                         return clazz.cast(new EmailService(config));
                     }
+                } else if (clazz == ExchangeRateService.class) {
+                    return clazz.cast(new ExchangeRateService());
                 }
                 throw new IllegalArgumentException("Unknown dependency: " + clazz.getName());
             }
