@@ -1,5 +1,6 @@
 package com.example.payment.application;
 
+import akka.javasdk.testkit.TestKit;
 import akka.javasdk.testkit.TestKitSupport;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;

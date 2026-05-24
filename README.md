@@ -1,10 +1,10 @@
 # Online Payment Service
 
-[![Tests](https://img.shields.io/badge/tests-127%20passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)](IMPLEMENTATION_SUMMARY.md)
-[![Status](https://img.shields.io/badge/status-production--ready-blue)](IMPLEMENTATION_SUMMARY.md)
-[![Security](https://img.shields.io/badge/security-enterprise--grade-blue)](IMPLEMENTATION_SUMMARY.md)
-[![AI](https://img.shields.io/badge/AI-agents--enabled-purple)](AI_AGENTS.md)
+[![Tests](https://img.shields.io/badge/tests-127%20passing-brightgreen)](docs/implementation/IMPLEMENTATION_SUMMARY.md)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)](docs/implementation/IMPLEMENTATION_SUMMARY.md)
+[![Status](https://img.shields.io/badge/status-production--ready-blue)](docs/implementation/IMPLEMENTATION_SUMMARY.md)
+[![Security](https://img.shields.io/badge/security-enterprise--grade-blue)](SECURITY.md)
+[![AI](https://img.shields.io/badge/AI-agents--enabled-purple)](docs/features/AI_AGENTS.md)
 
 A comprehensive payment processing service built with Akka SDK that handles credit/debit card payments, digital wallets, multi-currency transactions, and refunds with PCI DSS Level 1 compliance. Now enhanced with AI agents for customer support, fraud detection, and payment failure resolution.
 
@@ -39,7 +39,22 @@ A comprehensive payment processing service built with Akka SDK that handles cred
 - **Guardrails**: PII detection, output validation, audit logging for compliance
 - **Session Memory**: Conversational context maintained across interactions
 
-See [AI_AGENTS.md](AI_AGENTS.md) for complete documentation.
+### Agent Marketplace 🏪
+- **Pre-built Templates**: 8 production-ready agent templates (customer support, fraud detection, analytics, etc.)
+- **Template Discovery**: Browse, search, and filter by category
+- **Rating System**: 5-star ratings with average scores and review counts
+- **One-Click Deploy**: Deploy templates with custom configuration
+- **Web UI**: Interactive marketplace at `/marketplace-ui`
+
+### Agent Chaining 🔗
+- **Sequential Chains**: Pipeline agents one after another (triage → support → escalation)
+- **Parallel Chains**: Execute multiple agents simultaneously (velocity + pattern + risk scoring)
+- **Conditional Chains**: Dynamic execution based on runtime context (analyze → approve if safe → execute)
+- **8 Pre-built Chains**: Customer support, fraud detection, payment analysis, content moderation, and more
+- **Template Variables**: Dynamic input rendering with `{{variable}}` syntax
+- **Execution Tracking**: Monitor chain progress with step-by-step results
+
+See [AI_AGENTS.md](docs/features/AI_AGENTS.md), [AGENT_MARKETPLACE.md](docs/features/AGENT_MARKETPLACE.md), and [AGENT_CHAINING.md](docs/features/AGENT_CHAINING.md) for complete documentation.
 
 ## Prerequisites
 
